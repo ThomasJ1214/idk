@@ -400,9 +400,7 @@ footer {
   width: 100%; height: 100%;
   object-fit: contain;
   z-index: 0;
-  /* Mirroring applied via JS (.mirrored class) — front camera only */
-}
-#videoEl.mirrored {
+  /* Mirror so the view feels like a selfie / whiteboard — natural for drawing */
   transform: scaleX(-1);
 }
 

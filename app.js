@@ -284,10 +284,11 @@ function onResults(results) {
     if (fpsEl) fpsEl.textContent = fps + ' fps';
   }
 
-  // Mirror only when using the front (selfie) camera.
-  const mirrored = currentFacing === 'user';
+  // Always mirror — the view is a selfie/whiteboard; matches CSS transform on the video.
+  ctx.save();
   ctx.clearRect(0, 0, w, h);
-  if (mirrored) ctx.setTransform(-1, 0, 0, 1, w, 0);
+  ctx.translate(w, 0);
+  ctx.scale(-1, 1);
 
   // ── Face ─────────────────────────────────────────────
   const hasFace = !!(results.faceLandmarks && results.faceLandmarks.length);
@@ -347,7 +348,7 @@ function onResults(results) {
       const tip   = penHand[LM.INDEX_TIP];
       const rawX  = tip.x * w;                        // ctx coords
       const rawY  = tip.y * h;
-      const drawX = mirrored ? (w - rawX) : rawX;    // drawCtx coords (no transform)
+      const drawX = w - rawX;    // pre-mirrored for drawCtx (no transform on that context)
 
       if (lastDrawPoint) {
         drawCtx.beginPath();
@@ -397,8 +398,7 @@ function onResults(results) {
     }
   }
 
-  // Reset canvas transform to identity for next frame (only needed when mirror was applied)
-  if (mirrored) ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.restore();
 }
 
 // ══════════════════════════════════════════════════════════
@@ -461,9 +461,6 @@ async function startCamera(deviceId) {
     loadingOverlay.style.display = 'none';
     return;
   }
-
-  // Mirror CSS only for the front/selfie camera
-  videoEl.classList.toggle('mirrored', currentFacing === 'user');
 
   // Downsample each video frame into a small canvas before sending to MediaPipe.
   // iOS Safari cannot feed HTMLVideoElement pixels directly into the WebGL pipeline;
@@ -591,12 +588,10 @@ screenshotBtn.addEventListener('click', () => {
   tCtx.imageSmoothingEnabled = true;
   tCtx.imageSmoothingQuality = 'high';
 
-  // 1. Full-res video — mirror only for front camera (CSS transform doesn't carry into drawImage)
+  // 1. Full-res video — mirror to match display (CSS transform doesn't carry into drawImage)
   tCtx.save();
-  if (currentFacing === 'user') {
-    tCtx.translate(EXPORT_W, 0);
-    tCtx.scale(-1, 1);
-  }
+  tCtx.translate(EXPORT_W, 0);
+  tCtx.scale(-1, 1);
   tCtx.drawImage(videoEl, 0, 0, EXPORT_W, EXPORT_H);
   tCtx.restore();
   // 2. Skeleton overlay (already mirrored in its pixel data, scale 2×)
