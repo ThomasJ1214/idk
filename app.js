@@ -17,7 +17,6 @@ const statusText     = document.getElementById('statusText');
 const noCameraMsg    = document.getElementById('noCameraMsg');
 
 // ── Resolution constants ──────────────────────────────────
-const TRACK_W  = 640,  TRACK_H  = 360;   // MediaPipe processing (fast)
 const EXPORT_W = 1280, EXPORT_H = 720;   // Screenshot output
 
 // ── DOM refs — hands ──────────────────────────────────────
@@ -269,8 +268,11 @@ function resizeCanvas(w, h) {
 //  onResults — called every frame by MediaPipe Holistic
 // ══════════════════════════════════════════════════════════
 function onResults(results) {
-  const w = results.image.width;
-  const h = results.image.height;
+  // Use the live video dimensions — more reliable than results.image.width/height
+  // which can vary depending on the source type passed to send().
+  const w = videoEl.videoWidth;
+  const h = videoEl.videoHeight;
+  if (!w || !h) return;
 
   if (canvas.width !== w || canvas.height !== h) resizeCanvas(w, h);
 
@@ -404,23 +406,26 @@ function onResults(results) {
 // ══════════════════════════════════════════════════════════
 //  MODEL INIT
 // ══════════════════════════════════════════════════════════
-function initModel() {
+async function initModel() {
   holisticModel = new Holistic({
     locateFile: (file) =>
       `https://cdn.jsdelivr.net/npm/@mediapipe/holistic@0.5.1675471629/${file}`,
   });
 
   holisticModel.setOptions({
-    modelComplexity: 0,          // 0 = lite, fastest
+    modelComplexity: 1,          // 1 = balanced — better detection than lite (0)
     smoothLandmarks: true,
     enableSegmentation: false,   // skip segmentation mask for performance
     smoothSegmentation: false,
-    refineFaceLandmarks: false,  // keep face lite for performance
-    minDetectionConfidence: 0.6,
+    refineFaceLandmarks: false,
+    minDetectionConfidence: 0.5, // lowered from 0.6 for more reliable detection
     minTrackingConfidence: 0.5,
   });
 
   holisticModel.onResults(onResults);
+  // Wait for WASM to fully download and initialise before any frames are sent.
+  // Without this, send() fires before the model is ready → no results / crashes.
+  await holisticModel.initialize();
 }
 
 // ══════════════════════════════════════════════════════════
@@ -465,24 +470,17 @@ async function startCamera(deviceId) {
   // Mirror CSS only for the front/selfie camera
   videoEl.classList.toggle('mirrored', currentFacing === 'user');
 
-  // Small canvas used to downsample each frame to tracking resolution
-  // before sending to MediaPipe — keeps processing fast.
-  const trackCanvas    = document.createElement('canvas');
-  trackCanvas.width    = TRACK_W;
-  trackCanvas.height   = TRACK_H;
-  const trackCtx       = trackCanvas.getContext('2d');
-  let shownActive      = false;
-
-  loadingText.textContent = 'Loading tracking model…';
+  let shownActive = false;
 
   const loop = async () => {
     // Stop if a newer startCamera call has taken over
     if (frameLoopToken !== myToken) return;
 
-    if (holisticModel && videoEl.readyState >= 2) {
+    if (videoEl.readyState >= 2) {
       try {
-        trackCtx.drawImage(videoEl, 0, 0, TRACK_W, TRACK_H);
-        await holisticModel.send({ image: trackCanvas });
+        // Send the video element directly — avoids the intermediate 2D canvas
+        // that previously caused GPU-pipeline mismatches with MediaPipe's WebGL backend.
+        await holisticModel.send({ image: videoEl });
         if (!shownActive) {
           shownActive = true;
           loadingOverlay.style.display = 'none';
@@ -490,8 +488,6 @@ async function startCamera(deviceId) {
           modelReady = true;
         }
       } catch (err) {
-        // Log but never let an error kill the loop — MediaPipe can throw on
-        // the first few frames while the WASM model is still initialising.
         console.warn('MediaPipe frame error (will retry):', err);
       }
     }
@@ -670,8 +666,14 @@ document.addEventListener('webkitfullscreenchange',  () => setFullscreenLabel(!!
 //  MAIN INIT
 // ══════════════════════════════════════════════════════════
 (async function init() {
-  setStatus('loading', 'Initializing…');
-  initModel();
+  setStatus('loading', 'Loading model…');
+  loadingText.textContent = 'Downloading tracking model…';
+
+  // MUST await before starting the frame loop — the WASM model must be fully
+  // initialised before any send() call, or results are empty / frames throw.
+  await initModel();
+
+  loadingText.textContent = 'Starting camera…';
   await populateCameras();
 
   const firstDevice = cameraSelect.options[0]?.value || '';
