@@ -417,9 +417,9 @@ async function startCamera(deviceId) {
 
   setStatus('loading', 'Starting camera…');
 
-  // Lower resolution on mobile for better performance
-  const camW = isMobile ? 640 : 1280;
-  const camH = isMobile ? 480 : 720;
+  // Use full 1280×720 on all platforms — user wants native res
+  const camW = 1280;
+  const camH = 720;
 
   const constraints = {
     video: {
@@ -547,16 +547,38 @@ colorSwatches.forEach(swatch => {
 });
 
 screenshotBtn.addEventListener('click', () => {
-  const tmp    = document.createElement('canvas');
-  tmp.width    = canvas.width;
-  tmp.height   = canvas.height;
-  const tCtx   = tmp.getContext('2d');
+  const tmp  = document.createElement('canvas');
+  tmp.width  = canvas.width;
+  tmp.height = canvas.height;
+  const tCtx = tmp.getContext('2d');
   tCtx.drawImage(canvas, 0, 0);
   tCtx.drawImage(drawingCanvas, 0, 0);
-  const link   = document.createElement('a');
-  link.download = `handtrack-${Date.now()}.png`;
-  link.href     = tmp.toDataURL('image/png');
-  link.click();
+
+  const filename = `handtrack-${Date.now()}.png`;
+
+  tmp.toBlob(async (blob) => {
+    // iOS: use Web Share API — triggers the native share sheet which
+    // includes "Save to Photos" as an option (requires iOS 15+ / Safari 15+)
+    if (isIOS && navigator.canShare) {
+      const file = new File([blob], filename, { type: 'image/png' });
+      if (navigator.canShare({ files: [file] })) {
+        try {
+          await navigator.share({ files: [file], title: 'HandTrack snapshot' });
+        } catch (err) {
+          if (err.name !== 'AbortError') console.error('Share failed:', err);
+        }
+        return;
+      }
+    }
+
+    // Desktop / Android: standard blob URL download
+    const url  = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.download = filename;
+    link.href     = url;
+    link.click();
+    URL.revokeObjectURL(url);
+  }, 'image/png');
 });
 
 // ── Camera flip (mobile only) ──────────────────────────
