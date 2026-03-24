@@ -284,10 +284,10 @@ function onResults(results) {
     if (fpsEl) fpsEl.textContent = fps + ' fps';
   }
 
-  // Clear canvas and apply mirror transform in a single matrix call.
-  // setTransform(a,b,c,d,e,f): here a=-1 flips x, e=w shifts so x=0 maps to x=w.
+  // Mirror only when using the front (selfie) camera.
+  const mirrored = currentFacing === 'user';
   ctx.clearRect(0, 0, w, h);
-  ctx.setTransform(-1, 0, 0, 1, w, 0);
+  if (mirrored) ctx.setTransform(-1, 0, 0, 1, w, 0);
 
   // ── Face ─────────────────────────────────────────────
   const hasFace = !!(results.faceLandmarks && results.faceLandmarks.length);
@@ -345,9 +345,9 @@ function onResults(results) {
     const penHand = leftLM || rightLM;
     if (penHand && isPointing(penHand)) {
       const tip   = penHand[LM.INDEX_TIP];
-      const rawX  = tip.x * w;      // ctx coords (mirror transform active)
+      const rawX  = tip.x * w;                        // ctx coords
       const rawY  = tip.y * h;
-      const drawX = w - rawX;       // drawCtx coords (no transform, pre-mirrored)
+      const drawX = mirrored ? (w - rawX) : rawX;    // drawCtx coords (no transform)
 
       if (lastDrawPoint) {
         drawCtx.beginPath();
@@ -397,8 +397,8 @@ function onResults(results) {
     }
   }
 
-  // Reset canvas transform to identity for next frame
-  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  // Reset canvas transform to identity for next frame (only needed when mirror was applied)
+  if (mirrored) ctx.setTransform(1, 0, 0, 1, 0, 0);
 }
 
 // ══════════════════════════════════════════════════════════
@@ -407,7 +407,7 @@ function onResults(results) {
 function initModel() {
   holisticModel = new Holistic({
     locateFile: (file) =>
-      `https://cdn.jsdelivr.net/npm/@mediapipe/holistic/${file}`,
+      `https://cdn.jsdelivr.net/npm/@mediapipe/holistic@0.5.1675471629/${file}`,
   });
 
   holisticModel.setOptions({
@@ -462,6 +462,9 @@ async function startCamera(deviceId) {
     return;
   }
 
+  // Mirror CSS only for the front/selfie camera
+  videoEl.classList.toggle('mirrored', currentFacing === 'user');
+
   // Small canvas used to downsample each frame to tracking resolution
   // before sending to MediaPipe — keeps processing fast.
   const trackCanvas    = document.createElement('canvas');
@@ -477,14 +480,19 @@ async function startCamera(deviceId) {
     if (frameLoopToken !== myToken) return;
 
     if (holisticModel && videoEl.readyState >= 2) {
-      trackCtx.drawImage(videoEl, 0, 0, TRACK_W, TRACK_H);
-      await holisticModel.send({ image: trackCanvas });
-
-      if (!shownActive) {
-        shownActive = true;
-        loadingOverlay.style.display = 'none';
-        setStatus('active', 'Tracking active');
-        modelReady = true;
+      try {
+        trackCtx.drawImage(videoEl, 0, 0, TRACK_W, TRACK_H);
+        await holisticModel.send({ image: trackCanvas });
+        if (!shownActive) {
+          shownActive = true;
+          loadingOverlay.style.display = 'none';
+          setStatus('active', 'Tracking active');
+          modelReady = true;
+        }
+      } catch (err) {
+        // Log but never let an error kill the loop — MediaPipe can throw on
+        // the first few frames while the WASM model is still initialising.
+        console.warn('MediaPipe frame error (will retry):', err);
       }
     }
 
@@ -584,10 +592,12 @@ screenshotBtn.addEventListener('click', () => {
   tCtx.imageSmoothingEnabled = true;
   tCtx.imageSmoothingQuality = 'high';
 
-  // 1. Full-res video — mirror to match display (CSS transform doesn't carry into drawImage)
+  // 1. Full-res video — mirror only for front camera (CSS transform doesn't carry into drawImage)
   tCtx.save();
-  tCtx.translate(EXPORT_W, 0);
-  tCtx.scale(-1, 1);
+  if (currentFacing === 'user') {
+    tCtx.translate(EXPORT_W, 0);
+    tCtx.scale(-1, 1);
+  }
   tCtx.drawImage(videoEl, 0, 0, EXPORT_W, EXPORT_H);
   tCtx.restore();
   // 2. Skeleton overlay (already mirrored in its pixel data, scale 2×)
