@@ -17,7 +17,7 @@ const statusText     = document.getElementById('statusText');
 const noCameraMsg    = document.getElementById('noCameraMsg');
 
 // ── Resolution constants ──────────────────────────────────
-const TRACK_W  = 640,  TRACK_H  = 360;   // MediaPipe processing canvas
+const TRACK_W  = 640;   // tracking canvas width; height is derived from camera AR
 const EXPORT_W = 1280, EXPORT_H = 720;   // Screenshot output
 
 // ── DOM refs — hands ──────────────────────────────────────
@@ -462,13 +462,29 @@ async function startCamera(deviceId) {
     return;
   }
 
-  // Downsample each video frame into a small canvas before sending to MediaPipe.
-  // iOS Safari cannot feed HTMLVideoElement pixels directly into the WebGL pipeline;
-  // an intermediate 2D canvas is required for cross-platform compatibility.
+  // Wait until the camera resolution is known (videoWidth/Height populated).
+  // On some iOS browsers these can still be 0 immediately after play() resolves.
+  if (!videoEl.videoWidth) {
+    await new Promise(r => videoEl.addEventListener('loadedmetadata', r, { once: true }));
+  }
+
+  // Build the tracking canvas at the camera's ACTUAL aspect ratio.
+  // drawImage(videoEl, 0, 0, trackW, trackH) then fills the canvas without
+  // distortion, so MediaPipe landmarks come back in the same coordinate space
+  // the video occupies on screen — perfect overlay alignment on all devices.
+  const vW = videoEl.videoWidth  || EXPORT_W;
+  const vH = videoEl.videoHeight || EXPORT_H;
+  const trackH = Math.round(TRACK_W * vH / vW);
+
   const trackCanvas = document.createElement('canvas');
   trackCanvas.width  = TRACK_W;
-  trackCanvas.height = TRACK_H;
+  trackCanvas.height = trackH;
   const trackCtx = trackCanvas.getContext('2d');
+
+  // Pre-size overlay canvas now so the layout is correct from the first frame
+  // (avoids the 300×150 browser-default until onResults fires).
+  resizeCanvas(TRACK_W, trackH);
+
   let shownActive = false;
 
   loadingText.textContent = 'Loading tracking model…';
@@ -479,7 +495,7 @@ async function startCamera(deviceId) {
 
     if (holisticModel && videoEl.readyState >= 2) {
       try {
-        trackCtx.drawImage(videoEl, 0, 0, TRACK_W, TRACK_H);
+        trackCtx.drawImage(videoEl, 0, 0, TRACK_W, trackH);
         await holisticModel.send({ image: trackCanvas });
         if (!shownActive) {
           shownActive = true;
