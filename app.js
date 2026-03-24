@@ -251,9 +251,13 @@ function onResults(results) {
     if (fpsEl) fpsEl.textContent = fps + ' fps';
   }
 
-  // Canvas is transparent — live video feeds through from <video> below
+  // Canvas is transparent — live video feeds through from <video> below.
+  // Mirror transform: translate right edge to origin, then flip x so all
+  // skeleton drawing lands on top of the CSS-mirrored video feed.
   ctx.save();
-  ctx.clearRect(0, 0, w, h);
+  ctx.clearRect(0, 0, w, h);   // clear before transform (identity space)
+  ctx.translate(w, 0);
+  ctx.scale(-1, 1);
 
   // ── Face overlay ─────────────────────────────────────
   const hasFace = !!(results.faceLandmarks && results.faceLandmarks.length > 0);
@@ -354,39 +358,42 @@ function onResults(results) {
     const penHand = leftLM || rightLM;
     if (penHand) {
       const indexUp = isPointing(penHand); // only draw when truly pointing (others curled)
-      const tip = penHand[LM.INDEX_TIP];
-      const px = tip.x * w;
-      const py = tip.y * h;
+      const tip  = penHand[LM.INDEX_TIP];
+      // rawX/Y used for ctx (ctx already has mirror transform applied)
+      const rawX = tip.x * w;
+      const rawY = tip.y * h;
+      // drawX is pre-mirrored for drawCtx (no transform on that context)
+      const drawX = w - rawX;
 
       if (indexUp) {
-        // Draw stroke on persistent drawing canvas
+        // Stroke on persistent drawing canvas at the mirrored position
         if (lastDrawPoint) {
           drawCtx.beginPath();
           drawCtx.moveTo(lastDrawPoint.x, lastDrawPoint.y);
-          drawCtx.lineTo(px, py);
+          drawCtx.lineTo(drawX, rawY);
           drawCtx.strokeStyle = drawColor;
           drawCtx.lineWidth   = 5;
           drawCtx.lineCap     = 'round';
           drawCtx.lineJoin    = 'round';
           drawCtx.stroke();
         }
-        lastDrawPoint = { x: px, y: py };
+        lastDrawPoint = { x: drawX, y: rawY };
 
-        // Cursor ring while drawing
+        // Cursor ring on overlay (ctx mirror transform handles the flip)
         ctx.beginPath();
-        ctx.arc(px, py, 10, 0, 2 * Math.PI);
+        ctx.arc(rawX, rawY, 10, 0, 2 * Math.PI);
         ctx.strokeStyle = drawColor;
         ctx.lineWidth   = 3;
         ctx.stroke();
         ctx.beginPath();
-        ctx.arc(px, py, 3, 0, 2 * Math.PI);
+        ctx.arc(rawX, rawY, 3, 0, 2 * Math.PI);
         ctx.fillStyle = drawColor;
         ctx.fill();
       } else {
         lastDrawPoint = null;
-        // Dim cursor when pen is "up" (other fingers down)
+        // Ghost cursor when pen is up
         ctx.beginPath();
-        ctx.arc(px, py, 7, 0, 2 * Math.PI);
+        ctx.arc(rawX, rawY, 7, 0, 2 * Math.PI);
         ctx.strokeStyle = 'rgba(255,255,255,0.35)';
         ctx.lineWidth   = 2;
         ctx.stroke();
@@ -571,11 +578,15 @@ screenshotBtn.addEventListener('click', () => {
   tCtx.imageSmoothingEnabled = true;
   tCtx.imageSmoothingQuality = 'high';
 
-  // 1. Full-res video frame from the native camera stream
+  // 1. Full-res video — mirror to match display (CSS transform doesn't carry into drawImage)
+  tCtx.save();
+  tCtx.translate(EXPORT_W, 0);
+  tCtx.scale(-1, 1);
   tCtx.drawImage(videoEl, 0, 0, EXPORT_W, EXPORT_H);
-  // 2. Skeleton overlay (640×360 → scaled 2× to 1280×720)
+  tCtx.restore();
+  // 2. Skeleton overlay (already mirrored in its pixel data, scale 2×)
   tCtx.drawImage(canvas, 0, 0, EXPORT_W, EXPORT_H);
-  // 3. Drawing strokes (also scaled 2×)
+  // 3. Drawing strokes (pre-mirrored coords, scale 2×)
   tCtx.drawImage(drawingCanvas, 0, 0, EXPORT_W, EXPORT_H);
 
   const filename = `handtrack-${Date.now()}.png`;
