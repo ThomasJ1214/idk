@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>HandTrack — Live Camera</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<div class="cam-page">
+
+  <!-- Header bar -->
+  <header class="cam-header">
+    <a href="index.html" class="btn btn-ghost" style="padding:8px 16px;font-size:0.85rem;">
+      ← Home
+    </a>
+    <span class="nav-logo">HandTrack</span>
+
+    <div class="cam-controls">
+      <div class="cam-select-wrap">
+        <select id="cameraSelect" title="Select camera">
+          <option value="">Loading cameras…</option>
+        </select>
+      </div>
+      <div class="status-dot">
+        <span class="dot" id="statusDot"></span>
+        <span id="statusText">Initializing…</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- Camera viewport -->
+  <div class="cam-viewport" id="viewport">
+
+    <!-- Loading overlay -->
+    <div class="loading-overlay" id="loadingOverlay">
+      <div class="spinner"></div>
+      <p id="loadingText">Loading hand tracking model…</p>
+    </div>
+
+    <!-- Hidden video source -->
+    <video id="videoEl" autoplay playsinline muted></video>
+
+    <!-- Canvas for video + skeleton overlay -->
+    <canvas id="overlayCanvas"></canvas>
+
+    <!-- Gesture + Coordinates panel (first / only hand) -->
+    <div class="overlay-panel info-panel" id="infoPanel" style="display:none">
+      <h4>Hand 1</h4>
+      <div class="gesture-label" id="gestureLabel">—</div>
+      <div>
+        <div class="coord-row"><span>X</span><span id="coordX">—</span></div>
+        <div class="coord-row"><span>Y</span><span id="coordY">—</span></div>
+        <div class="coord-row"><span>Pixel X</span><span id="pixelX">—</span></div>
+        <div class="coord-row"><span>Pixel Y</span><span id="pixelY">—</span></div>
+      </div>
+
+      <!-- Second hand section -->
+      <div class="second-hand" id="secondHand">
+        <h4>Hand 2</h4>
+        <div class="gesture-label" id="gestureLabel2">—</div>
+        <div>
+          <div class="coord-row"><span>X</span><span id="coordX2">—</span></div>
+          <div class="coord-row"><span>Y</span><span id="coordY2">—</span></div>
+          <div class="coord-row"><span>Pixel X</span><span id="pixelX2">—</span></div>
+          <div class="coord-row"><span>Pixel Y</span><span id="pixelY2">—</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Hand count indicator -->
+    <div class="overlay-panel hand-count-panel" id="handCountPanel" style="display:none">
+      Hands detected: <strong id="handCount">0</strong>
+    </div>
+
+    <!-- No-camera message -->
+    <div class="no-camera-msg" id="noCameraMsg" style="display:none">
+      <h3>No Camera Found</h3>
+      <p>Please connect a camera and refresh the page.</p>
+    </div>
+
+  </div><!-- /cam-viewport -->
+</div>
+
+<!-- MediaPipe via CDN -->
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+
+<script src="app.js"></script>
+</body>
+</html>
