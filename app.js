@@ -89,6 +89,9 @@ let frameLoopToken = 0;        // incremented on each startCamera; old loops sel
 let fpsFrameCount = 0;
 let fpsLastTime   = performance.now();
 
+// ── Drawing state ─────────────────────────────────────────
+let prevDrawPoint  = null; // second-to-last point for bezier smoothing
+
 // ══════════════════════════════════════════════════════════
 //  HAND GESTURE CLASSIFICATION
 // ══════════════════════════════════════════════════════════
@@ -100,6 +103,9 @@ const LM = {
   RING_MCP: 13, RING_PIP: 14, RING_DIP: 15, RING_TIP: 16,
   PINKY_MCP: 17, PINKY_PIP: 18, PINKY_DIP: 19, PINKY_TIP: 20,
 };
+
+// Pre-allocated constant — avoids a new array every frame in drawHandSkeleton
+const FINGER_TIPS = [LM.THUMB_TIP, LM.INDEX_TIP, LM.MIDDLE_TIP, LM.RING_TIP, LM.PINKY_TIP];
 
 function isFingerExtended(lm, tipIdx, pipIdx) {
   return lm[tipIdx].y < lm[pipIdx].y;
@@ -118,7 +124,7 @@ function classifyGesture(lm) {
   const middle = isFingerExtended(lm, LM.MIDDLE_TIP, LM.MIDDLE_PIP);
   const ring   = isFingerExtended(lm, LM.RING_TIP,   LM.RING_PIP);
   const pinky  = isFingerExtended(lm, LM.PINKY_TIP,  LM.PINKY_PIP);
-  const extCount = [index, middle, ring, pinky].filter(Boolean).length;
+  const extCount = (index ? 1 : 0) + (middle ? 1 : 0) + (ring ? 1 : 0) + (pinky ? 1 : 0);
 
   if (thumb && !index && !middle && !ring && !pinky) return '👍 Thumbs Up';
   if (extCount >= 4)                                  return '✋ Open Hand';
@@ -138,6 +144,31 @@ function isPointing(lm) {
   const ring   = isFingerExtended(lm, LM.RING_TIP,   LM.RING_PIP);
   const pinky  = isFingerExtended(lm, LM.PINKY_TIP,  LM.PINKY_PIP);
   return index && !middle && !ring && !pinky;
+}
+
+// ── Top-level rendering helpers ───────────────────────────
+// Defined here (not inside onResults) so no new function objects are
+// allocated on every frame.
+
+function drawHandSkeleton(landmarks, w, h) {
+  drawConnectors(ctx, landmarks, HAND_CONNECTIONS, { color: '#6c63ff', lineWidth: 2 });
+  drawLandmarks(ctx, landmarks, { color: '#00d4ff', fillColor: '#00d4ff', radius: 4, lineWidth: 1 });
+  ctx.fillStyle = '#ff6584';
+  for (let i = 0; i < FINGER_TIPS.length; i++) {
+    const lm = landmarks[FINGER_TIPS[i]];
+    ctx.beginPath();
+    ctx.arc(lm.x * w, lm.y * h, 6, 0, 2 * Math.PI);
+    ctx.fill();
+  }
+}
+
+function updateHandPanel(landmarks, w, h, label, xEl, yEl, pxEl, pyEl) {
+  label.textContent = classifyGesture(landmarks);
+  const wrist = landmarks[LM.WRIST];
+  xEl.textContent  = wrist.x.toFixed(3);
+  yEl.textContent  = wrist.y.toFixed(3);
+  pxEl.textContent = Math.round(wrist.x * w) + 'px';
+  pyEl.textContent = Math.round(wrist.y * h) + 'px';
 }
 
 // ══════════════════════════════════════════════════════════
@@ -172,8 +203,10 @@ function lmDist(a, b) {
  * EAR = (|p2-p6| + |p3-p5|) / (2 * |p1-p4|)
  * indices: [outer, top1, top2, inner, bot1, bot2]
  */
-function eyeAspectRatio(lm, indices) {
-  const [p1, p2, p3, p4, p5, p6] = indices.map(i => lm[i]);
+function eyeAspectRatio(lm, idx) {
+  // Direct index access — avoids allocating a new array via .map() every frame
+  const p1 = lm[idx[0]], p2 = lm[idx[1]], p3 = lm[idx[2]];
+  const p4 = lm[idx[3]], p5 = lm[idx[4]], p6 = lm[idx[5]];
   return (lmDist(p2, p6) + lmDist(p3, p5)) / (2 * lmDist(p1, p4));
 }
 
@@ -241,7 +274,7 @@ function onResults(results) {
 
   if (canvas.width !== w || canvas.height !== h) resizeCanvas(w, h);
 
-  // ── FPS counter ───────────────────────────────────────
+  // ── FPS ──────────────────────────────────────────────
   fpsFrameCount++;
   const nowMs = performance.now();
   if (nowMs - fpsLastTime >= 500) {
@@ -251,159 +284,121 @@ function onResults(results) {
     if (fpsEl) fpsEl.textContent = fps + ' fps';
   }
 
-  // Canvas is transparent — live video feeds through from <video> below.
-  // Mirror transform: translate right edge to origin, then flip x so all
-  // skeleton drawing lands on top of the CSS-mirrored video feed.
-  ctx.save();
-  ctx.clearRect(0, 0, w, h);   // clear before transform (identity space)
-  ctx.translate(w, 0);
-  ctx.scale(-1, 1);
+  // Clear canvas and apply mirror transform in a single matrix call.
+  // setTransform(a,b,c,d,e,f): here a=-1 flips x, e=w shifts so x=0 maps to x=w.
+  ctx.clearRect(0, 0, w, h);
+  ctx.setTransform(-1, 0, 0, 1, w, 0);
 
-  // ── Face overlay ─────────────────────────────────────
-  const hasFace = !!(results.faceLandmarks && results.faceLandmarks.length > 0);
-
+  // ── Face ─────────────────────────────────────────────
+  const hasFace = !!(results.faceLandmarks && results.faceLandmarks.length);
   if (showFace && hasFace) {
-    // Draw face contours — same colour/weight as hand skeleton
-    drawConnectors(ctx, results.faceLandmarks, FACEMESH_CONTOURS, {
-      color: '#6c63ff',
-      lineWidth: 2,
-    });
-    drawLandmarks(ctx, results.faceLandmarks, {
-      color: '#00d4ff',
-      fillColor: '#00d4ff',
-      radius: 1.5,
-      lineWidth: 0,
-    });
-
-    // Classify and display expression
+    drawConnectors(ctx, results.faceLandmarks, FACEMESH_CONTOURS, { color: '#6c63ff', lineWidth: 2 });
+    drawLandmarks(ctx, results.faceLandmarks, { color: '#00d4ff', fillColor: '#00d4ff', radius: 1.5, lineWidth: 0 });
     const expr = classifyExpression(results.faceLandmarks);
-    facePanel.style.display       = 'block';
-    expressionLabel.textContent   = expr.label;
-    mouthStateEl.textContent      = expr.mouth;
-    leftEyeStateEl.textContent    = expr.leftEye;
-    rightEyeStateEl.textContent   = expr.rightEye;
-    browsStateEl.textContent      = expr.brows;
+    facePanel.style.display     = 'block';
+    expressionLabel.textContent = expr.label;
+    mouthStateEl.textContent    = expr.mouth;
+    leftEyeStateEl.textContent  = expr.leftEye;
+    rightEyeStateEl.textContent = expr.rightEye;
+    browsStateEl.textContent    = expr.brows;
   } else {
     facePanel.style.display = 'none';
   }
 
-  // ── Hand overlays ─────────────────────────────────────
-  const leftLM  = results.leftHandLandmarks;   // person's left hand
-  const rightLM = results.rightHandLandmarks;  // person's right hand
-  const handDetectedCount = (leftLM ? 1 : 0) + (rightLM ? 1 : 0);
+  // ── Hands ────────────────────────────────────────────
+  const leftLM  = results.leftHandLandmarks;
+  const rightLM = results.rightHandLandmarks;
+  const handCount = (leftLM ? 1 : 0) + (rightLM ? 1 : 0);
 
   handCountPanel.style.display = 'block';
-  handCountEl.textContent      = handDetectedCount;
+  handCountEl.textContent      = handCount;
   faceDetectedEl.textContent   = hasFace ? 'Yes' : 'No';
 
-  if (showHands && handDetectedCount > 0) {
+  if (showHands && handCount > 0) {
     infoPanel.style.display = 'block';
-
-    const drawHand = (landmarks) => {
-      drawConnectors(ctx, landmarks, HAND_CONNECTIONS, {
-        color: '#6c63ff',
-        lineWidth: 2,
-      });
-      drawLandmarks(ctx, landmarks, {
-        color: '#00d4ff',
-        fillColor: '#00d4ff',
-        radius: 4,
-        lineWidth: 1,
-      });
-      // Highlight fingertips
-      const tips = [LM.THUMB_TIP, LM.INDEX_TIP, LM.MIDDLE_TIP, LM.RING_TIP, LM.PINKY_TIP];
-      tips.forEach(idx => {
-        const lm = landmarks[idx];
-        ctx.beginPath();
-        ctx.arc(lm.x * w, lm.y * h, 6, 0, 2 * Math.PI);
-        ctx.fillStyle = '#ff6584';
-        ctx.fill();
-      });
-    };
-
-    const updateHandUI = (landmarks, label, coordXEl, coordYEl, pixelXEl, pixelYEl) => {
-      const gesture = classifyGesture(landmarks);
-      const wrist   = landmarks[LM.WRIST];
-      const px = Math.round(wrist.x * w);
-      const py = Math.round(wrist.y * h);
-      label.textContent    = gesture;
-      coordXEl.textContent = wrist.x.toFixed(3);
-      coordYEl.textContent = wrist.y.toFixed(3);
-      pixelXEl.textContent = px + 'px';
-      pixelYEl.textContent = py + 'px';
-    };
-
     if (leftLM) {
-      drawHand(leftLM);
-      updateHandUI(leftLM, gestureLabel, coordX, coordY, pixelX, pixelY);
+      drawHandSkeleton(leftLM, w, h);
+      updateHandPanel(leftLM, w, h, gestureLabel, coordX, coordY, pixelX, pixelY);
     } else {
       gestureLabel.textContent = '—';
       coordX.textContent = coordY.textContent = pixelX.textContent = pixelY.textContent = '—';
     }
-
     if (rightLM) {
       secondHandDiv.classList.add('visible');
-      drawHand(rightLM);
-      updateHandUI(rightLM, gestureLabel2, coordX2, coordY2, pixelX2, pixelY2);
+      drawHandSkeleton(rightLM, w, h);
+      updateHandPanel(rightLM, w, h, gestureLabel2, coordX2, coordY2, pixelX2, pixelY2);
     } else {
       secondHandDiv.classList.remove('visible');
     }
-
   } else {
     infoPanel.style.display = 'none';
   }
 
   // ── Air Drawing ───────────────────────────────────────
   if (drawMode) {
-    const penHand = leftLM || rightLM;
-    if (penHand) {
-      const indexUp = isPointing(penHand); // only draw when truly pointing (others curled)
-      const tip  = penHand[LM.INDEX_TIP];
-      // rawX/Y used for ctx (ctx already has mirror transform applied)
-      const rawX = tip.x * w;
-      const rawY = tip.y * h;
-      // drawX is pre-mirrored for drawCtx (no transform on that context)
-      const drawX = w - rawX;
+    // Set stroke properties once per frame, outside the per-point logic
+    drawCtx.strokeStyle = drawColor;
+    drawCtx.lineWidth   = 5;
+    drawCtx.lineCap     = 'round';
+    drawCtx.lineJoin    = 'round';
 
-      if (indexUp) {
-        // Stroke on persistent drawing canvas at the mirrored position
-        if (lastDrawPoint) {
-          drawCtx.beginPath();
+    const penHand = leftLM || rightLM;
+    if (penHand && isPointing(penHand)) {
+      const tip   = penHand[LM.INDEX_TIP];
+      const rawX  = tip.x * w;      // ctx coords (mirror transform active)
+      const rawY  = tip.y * h;
+      const drawX = w - rawX;       // drawCtx coords (no transform, pre-mirrored)
+
+      if (lastDrawPoint) {
+        drawCtx.beginPath();
+        if (prevDrawPoint) {
+          // Midpoint bezier — smooth curves through consecutive points
+          drawCtx.moveTo(
+            (prevDrawPoint.x + lastDrawPoint.x) / 2,
+            (prevDrawPoint.y + lastDrawPoint.y) / 2
+          );
+          drawCtx.quadraticCurveTo(
+            lastDrawPoint.x, lastDrawPoint.y,
+            (lastDrawPoint.x + drawX) / 2,
+            (lastDrawPoint.y + rawY) / 2
+          );
+        } else {
           drawCtx.moveTo(lastDrawPoint.x, lastDrawPoint.y);
           drawCtx.lineTo(drawX, rawY);
-          drawCtx.strokeStyle = drawColor;
-          drawCtx.lineWidth   = 5;
-          drawCtx.lineCap     = 'round';
-          drawCtx.lineJoin    = 'round';
-          drawCtx.stroke();
         }
-        lastDrawPoint = { x: drawX, y: rawY };
+        drawCtx.stroke();
+      }
 
-        // Cursor ring on overlay (ctx mirror transform handles the flip)
+      prevDrawPoint = lastDrawPoint;
+      lastDrawPoint = { x: drawX, y: rawY };
+
+      // Active cursor on overlay canvas (mirror transform already applied)
+      ctx.beginPath();
+      ctx.arc(rawX, rawY, 10, 0, 2 * Math.PI);
+      ctx.strokeStyle = drawColor;
+      ctx.lineWidth   = 3;
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(rawX, rawY, 3, 0, 2 * Math.PI);
+      ctx.fillStyle = drawColor;
+      ctx.fill();
+    } else {
+      prevDrawPoint = null;
+      lastDrawPoint = null;
+      // Ghost cursor when hand visible but not pointing
+      if (penHand) {
+        const tip = penHand[LM.INDEX_TIP];
         ctx.beginPath();
-        ctx.arc(rawX, rawY, 10, 0, 2 * Math.PI);
-        ctx.strokeStyle = drawColor;
-        ctx.lineWidth   = 3;
-        ctx.stroke();
-        ctx.beginPath();
-        ctx.arc(rawX, rawY, 3, 0, 2 * Math.PI);
-        ctx.fillStyle = drawColor;
-        ctx.fill();
-      } else {
-        lastDrawPoint = null;
-        // Ghost cursor when pen is up
-        ctx.beginPath();
-        ctx.arc(rawX, rawY, 7, 0, 2 * Math.PI);
+        ctx.arc(tip.x * w, tip.y * h, 7, 0, 2 * Math.PI);
         ctx.strokeStyle = 'rgba(255,255,255,0.35)';
         ctx.lineWidth   = 2;
         ctx.stroke();
       }
-    } else {
-      lastDrawPoint = null; // no hand visible
     }
   }
 
-  ctx.restore();
+  // Reset canvas transform to identity for next frame
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
 }
 
 // ══════════════════════════════════════════════════════════
@@ -566,7 +561,7 @@ toggleDrawBtn.addEventListener('click', () => {
   drawMode = !drawMode;
   toggleDrawBtn.classList.toggle('active', drawMode);
   drawToolbar.style.display = drawMode ? 'flex' : 'none';
-  if (!drawMode) lastDrawPoint = null;
+  if (!drawMode) { lastDrawPoint = null; prevDrawPoint = null; }
 });
 
 clearDrawBtn.addEventListener('click', () => {
