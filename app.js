@@ -16,12 +16,17 @@ const statusDot      = document.getElementById('statusDot');
 const statusText     = document.getElementById('statusText');
 const noCameraMsg    = document.getElementById('noCameraMsg');
 
+// ── Resolution constants ──────────────────────────────────
+const TRACK_W  = 640,  TRACK_H  = 360;   // MediaPipe processing (fast)
+const EXPORT_W = 1280, EXPORT_H = 720;   // Screenshot output
+
 // ── DOM refs — hands ──────────────────────────────────────
 const infoPanel      = document.getElementById('infoPanel');
 const handCountPanel = document.getElementById('handCountPanel');
 const secondHandDiv  = document.getElementById('secondHand');
 const handCountEl    = document.getElementById('handCount');
 const faceDetectedEl = document.getElementById('faceDetected');
+const fpsEl          = document.getElementById('fpsCounter');
 
 const gestureLabel  = document.getElementById('gestureLabel');
 const coordX        = document.getElementById('coordX');
@@ -79,6 +84,10 @@ let mediapipeCamera = null;
 let holisticModel   = null;
 let modelReady      = false;
 let currentFacing   = 'user'; // 'user' | 'environment'
+
+// ── FPS tracking ──────────────────────────────────────────
+let fpsFrameCount = 0;
+let fpsLastTime   = performance.now();
 
 // ══════════════════════════════════════════════════════════
 //  HAND GESTURE CLASSIFICATION
@@ -232,9 +241,19 @@ function onResults(results) {
 
   if (canvas.width !== w || canvas.height !== h) resizeCanvas(w, h);
 
+  // ── FPS counter ───────────────────────────────────────
+  fpsFrameCount++;
+  const nowMs = performance.now();
+  if (nowMs - fpsLastTime >= 500) {
+    const fps = Math.round(fpsFrameCount * 1000 / (nowMs - fpsLastTime));
+    fpsFrameCount = 0;
+    fpsLastTime   = nowMs;
+    if (fpsEl) fpsEl.textContent = fps + ' fps';
+  }
+
+  // Canvas is transparent — live video feeds through from <video> below
   ctx.save();
   ctx.clearRect(0, 0, w, h);
-  ctx.drawImage(results.image, 0, 0, w, h);
 
   // ── Face overlay ─────────────────────────────────────
   const hasFace = !!(results.faceLandmarks && results.faceLandmarks.length > 0);
@@ -417,16 +436,13 @@ async function startCamera(deviceId) {
 
   setStatus('loading', 'Starting camera…');
 
-  // Use full 1280×720 on all platforms — user wants native res
-  const camW = 1280;
-  const camH = 720;
-
+  // Request full 720p from the camera so videoEl has a high-res source
+  // for exports; MediaPipe processes at TRACK_W×TRACK_H for speed
   const constraints = {
     video: {
       deviceId: deviceId ? { exact: deviceId } : undefined,
-      width:    { ideal: camW },
-      height:   { ideal: camH },
-      // On mobile, respect the user-chosen facing direction
+      width:    { ideal: EXPORT_W },
+      height:   { ideal: EXPORT_H },
       facingMode: deviceId ? undefined : { ideal: currentFacing },
     },
     audio: false,
@@ -444,12 +460,13 @@ async function startCamera(deviceId) {
     return;
   }
 
+  // MediaPipe processes at lower tracking resolution for performance
   mediapipeCamera = new Camera(videoEl, {
     onFrame: async () => {
       if (holisticModel) await holisticModel.send({ image: videoEl });
     },
-    width:  camW,
-    height: camH,
+    width:  TRACK_W,
+    height: TRACK_H,
   });
 
   loadingText.textContent = 'Loading tracking model…';
@@ -548,11 +565,18 @@ colorSwatches.forEach(swatch => {
 
 screenshotBtn.addEventListener('click', () => {
   const tmp  = document.createElement('canvas');
-  tmp.width  = canvas.width;
-  tmp.height = canvas.height;
+  tmp.width  = EXPORT_W;
+  tmp.height = EXPORT_H;
   const tCtx = tmp.getContext('2d');
-  tCtx.drawImage(canvas, 0, 0);
-  tCtx.drawImage(drawingCanvas, 0, 0);
+  tCtx.imageSmoothingEnabled = true;
+  tCtx.imageSmoothingQuality = 'high';
+
+  // 1. Full-res video frame from the native camera stream
+  tCtx.drawImage(videoEl, 0, 0, EXPORT_W, EXPORT_H);
+  // 2. Skeleton overlay (640×360 → scaled 2× to 1280×720)
+  tCtx.drawImage(canvas, 0, 0, EXPORT_W, EXPORT_H);
+  // 3. Drawing strokes (also scaled 2×)
+  tCtx.drawImage(drawingCanvas, 0, 0, EXPORT_W, EXPORT_H);
 
   const filename = `handtrack-${Date.now()}.png`;
 
