@@ -2,7 +2,11 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <!-- viewport-fit=cover enables safe-area insets on iOS notch/home bar -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <!-- iOS home-screen PWA meta tags -->
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <title>HandTrack — Live Camera &amp; Face Tracking</title>
   <link rel="stylesheet" href="style.css" />
 </head>
@@ -28,7 +32,10 @@
         <button class="toggle-btn active" id="toggleFace">😊 Face</button>
         <button class="toggle-btn" id="toggleDraw">✏️ Draw</button>
       </div>
+      <!-- Mobile-only camera flip -->
+      <button class="icon-btn" id="flipCameraBtn" title="Flip camera" style="display:none">🔄</button>
       <button class="save-btn" id="screenshotBtn">📸 Save</button>
+      <button class="icon-btn" id="fullscreenBtn" title="Fullscreen">⛶</button>
       <div class="status-dot">
         <span class="dot" id="statusDot"></span>
         <span id="statusText">Initializing…</span>

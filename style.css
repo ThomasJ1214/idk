@@ -320,6 +320,10 @@ footer {
   border-bottom: 1px solid var(--border);
   gap: 16px;
   flex-wrap: wrap;
+  /* iOS notch / Dynamic Island */
+  padding-top:   max(14px, env(safe-area-inset-top));
+  padding-left:  max(24px, env(safe-area-inset-left));
+  padding-right: max(24px, env(safe-area-inset-right));
 }
 
 .cam-header .nav-logo { font-size: 1.2rem; }
@@ -466,7 +470,8 @@ footer {
 .coord-row span:first-child { color: var(--muted); }
 
 .hand-count-panel {
-  bottom: 16px; right: 16px;
+  bottom: max(16px, env(safe-area-inset-bottom));
+  right:  max(16px, env(safe-area-inset-right));
   background: rgba(10,10,15,0.82);
   border: 1px solid var(--border);
   border-radius: 10px;
@@ -533,6 +538,36 @@ footer {
   color: #fff;
 }
 
+/* Square icon button (fullscreen, flip) */
+.icon-btn {
+  width: 36px; height: 36px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 1rem;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, border-color 0.15s, transform 0.1s;
+  flex-shrink: 0;
+}
+.icon-btn:hover { background: rgba(255,255,255,0.09); border-color: var(--accent); }
+.icon-btn:active { transform: scale(0.93); }
+.icon-btn.active {
+  background: rgba(108,99,255,0.22);
+  border-color: rgba(108,99,255,0.55);
+}
+
+/* Fullscreen — hide header, give viewport full height */
+:fullscreen       .cam-header,
+:-webkit-full-screen .cam-header { display: none; }
+:fullscreen       .cam-page,
+:-webkit-full-screen .cam-page { grid-template-rows: 1fr; }
+:fullscreen       .cam-viewport,
+:-webkit-full-screen .cam-viewport { height: 100vh; }
+
 /* Screenshot button */
 .save-btn {
   padding: 7px 14px;
@@ -551,7 +586,7 @@ footer {
 
 /* Draw toolbar (bottom-centre pill) */
 .draw-toolbar {
-  bottom: 16px;
+  bottom: max(16px, env(safe-area-inset-bottom));
   left: 50%;
   transform: translateX(-50%);
   display: flex;
@@ -622,16 +657,53 @@ footer {
   border-top: 1px solid var(--border);
 }
 
-/* Responsive */
+/* ── Responsive ───────────────────────────────────────────── */
+
+/* Tablet */
+@media (max-width: 900px) {
+  .cam-select-wrap select { min-width: 130px; }
+}
+
+/* Mobile — phones */
 @media (max-width: 600px) {
   .home-nav { padding: 14px 20px; }
-  .info-panel { min-width: 140px; top: 8px; right: 8px; padding: 10px 12px; }
-  .face-panel { min-width: 140px; top: 8px; left: 8px; padding: 10px 12px; }
-  .gesture-label { font-size: 1.1rem; }
-  .expression-label { font-size: 1rem; }
-  .cam-header { gap: 8px; }
-  .toggle-btn { padding: 6px 10px; font-size: 0.78rem; }
-  .save-btn { padding: 6px 10px; font-size: 0.78rem; }
-  .draw-toolbar { padding: 8px 12px; gap: 6px; bottom: 8px; }
-  .color-swatch { width: 18px; height: 18px; }
+
+  /* Panels: stay in corners but compact */
+  .info-panel  { min-width: 130px; top: 8px; right: 8px; padding: 10px 12px; font-size: 0.8rem; }
+  .face-panel  { min-width: 130px; top: 8px; left: 8px;  padding: 10px 12px; font-size: 0.8rem; }
+  .gesture-label  { font-size: 1rem; margin-bottom: 10px; }
+  .expression-label { font-size: 0.95rem; margin-bottom: 8px; }
+  .coord-row { font-size: 0.75rem; }
+
+  /* Header: stack controls, tighter gap */
+  .cam-header { gap: 6px; padding-top: max(10px, env(safe-area-inset-top)); }
+  .cam-header .nav-logo { font-size: 1rem; }
+  .cam-controls { gap: 6px; }
+
+  /* Buttons: finger-friendly tap targets */
+  .toggle-btn  { padding: 8px 10px; font-size: 0.78rem; min-height: 38px; }
+  .save-btn    { padding: 8px 10px; font-size: 0.78rem; min-height: 38px; }
+  .icon-btn    { width: 38px; height: 38px; font-size: 1.1rem; }
+
+  /* Hide camera selector on phones (use flip button instead) */
+  .cam-select-wrap { display: none; }
+
+  /* Draw toolbar */
+  .draw-toolbar  { padding: 8px 12px; gap: 6px; }
+  .color-swatch  { width: 20px; height: 20px; }
 }
+
+/* iOS specific: hide second-hand coords to save space, safe area bottom */
+[data-platform="ios"] .second-hand .coord-row { display: none; }
+[data-platform="ios"] .hand-count-panel,
+[data-platform="android"] .hand-count-panel {
+  bottom: max(16px, env(safe-area-inset-bottom));
+}
+
+/* Android: camera select not needed (flip button handles it) */
+@media (max-width: 600px) {
+  [data-platform="android"] .cam-select-wrap { display: none; }
+}
+
+/* Desktop: flip button never shown (shown via JS on mobile) */
+[data-platform="desktop"] #flipCameraBtn { display: none !important; }

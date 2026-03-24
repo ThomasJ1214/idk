@@ -51,10 +51,22 @@ const screenshotBtn = document.getElementById('screenshotBtn');
 const drawToolbar   = document.getElementById('drawToolbar');
 const clearDrawBtn  = document.getElementById('clearDraw');
 const colorSwatches = document.querySelectorAll('.color-swatch');
+const flipCameraBtn = document.getElementById('flipCameraBtn');
+const fullscreenBtn = document.getElementById('fullscreenBtn');
 
 // ── Drawing canvas ────────────────────────────────────────
 const drawingCanvas = document.getElementById('drawingCanvas');
 const drawCtx       = drawingCanvas.getContext('2d');
+
+// ── Platform Detection ────────────────────────────────────
+const UA        = navigator.userAgent || '';
+const isIOS     = /iPhone|iPad|iPod/.test(UA) && !window.MSStream;
+const isAndroid = /Android/i.test(UA);
+const isMobile  = isIOS || isAndroid || window.matchMedia('(pointer: coarse)').matches;
+document.body.dataset.platform = isIOS ? 'ios' : isAndroid ? 'android' : 'desktop';
+
+// Show flip button on mobile
+if (isMobile) flipCameraBtn.style.display = 'inline-flex';
 
 // ── State ─────────────────────────────────────────────────
 let showHands       = true;
@@ -66,6 +78,7 @@ let currentStream   = null;
 let mediapipeCamera = null;
 let holisticModel   = null;
 let modelReady      = false;
+let currentFacing   = 'user'; // 'user' | 'environment'
 
 // ══════════════════════════════════════════════════════════
 //  HAND GESTURE CLASSIFICATION
@@ -107,6 +120,15 @@ function classifyGesture(lm) {
   if (index && !middle && !ring && pinky)             return '🤘 Rock';
   if (index && middle && ring && !pinky)              return '3️⃣ Three';
   return '🖐 Hand';
+}
+
+/** True only when index is extended AND middle/ring/pinky are all curled. */
+function isPointing(lm) {
+  const index  = isFingerExtended(lm, LM.INDEX_TIP,  LM.INDEX_PIP);
+  const middle = isFingerExtended(lm, LM.MIDDLE_TIP, LM.MIDDLE_PIP);
+  const ring   = isFingerExtended(lm, LM.RING_TIP,   LM.RING_PIP);
+  const pinky  = isFingerExtended(lm, LM.PINKY_TIP,  LM.PINKY_PIP);
+  return index && !middle && !ring && !pinky;
 }
 
 // ══════════════════════════════════════════════════════════
@@ -312,7 +334,7 @@ function onResults(results) {
   if (drawMode) {
     const penHand = leftLM || rightLM;
     if (penHand) {
-      const indexUp = isFingerExtended(penHand, LM.INDEX_TIP, LM.INDEX_PIP);
+      const indexUp = isPointing(penHand); // only draw when truly pointing (others curled)
       const tip = penHand[LM.INDEX_TIP];
       const px = tip.x * w;
       const py = tip.y * h;
@@ -395,12 +417,17 @@ async function startCamera(deviceId) {
 
   setStatus('loading', 'Starting camera…');
 
+  // Lower resolution on mobile for better performance
+  const camW = isMobile ? 640 : 1280;
+  const camH = isMobile ? 480 : 720;
+
   const constraints = {
     video: {
       deviceId: deviceId ? { exact: deviceId } : undefined,
-      width:  { ideal: 1280 },
-      height: { ideal: 720 },
-      facingMode: deviceId ? undefined : 'user',
+      width:    { ideal: camW },
+      height:   { ideal: camH },
+      // On mobile, respect the user-chosen facing direction
+      facingMode: deviceId ? undefined : { ideal: currentFacing },
     },
     audio: false,
   };
@@ -421,8 +448,8 @@ async function startCamera(deviceId) {
     onFrame: async () => {
       if (holisticModel) await holisticModel.send({ image: videoEl });
     },
-    width: 1280,
-    height: 720,
+    width:  camW,
+    height: camH,
   });
 
   loadingText.textContent = 'Loading tracking model…';
@@ -531,6 +558,40 @@ screenshotBtn.addEventListener('click', () => {
   link.href     = tmp.toDataURL('image/png');
   link.click();
 });
+
+// ── Camera flip (mobile only) ──────────────────────────
+flipCameraBtn.addEventListener('click', () => {
+  currentFacing = currentFacing === 'user' ? 'environment' : 'user';
+  modelReady = false;
+  loadingOverlay.style.display = 'flex';
+  startCamera(''); // restart with new facing
+});
+
+// ── Fullscreen ─────────────────────────────────────────
+function setFullscreenLabel(active) {
+  fullscreenBtn.textContent = active ? '✕' : '⛶';
+  fullscreenBtn.title       = active ? 'Exit fullscreen' : 'Fullscreen';
+  fullscreenBtn.classList.toggle('active', active);
+}
+
+fullscreenBtn.addEventListener('click', async () => {
+  const fsEl = document.fullscreenElement || document.webkitFullscreenElement;
+  try {
+    if (!fsEl) {
+      const el = document.documentElement;
+      if (el.requestFullscreen)            await el.requestFullscreen();
+      else if (el.webkitRequestFullscreen) await el.webkitRequestFullscreen();
+    } else {
+      if (document.exitFullscreen)            await document.exitFullscreen();
+      else if (document.webkitExitFullscreen) await document.webkitExitFullscreen();
+    }
+  } catch (err) {
+    console.log('Fullscreen unavailable:', err.message);
+  }
+});
+
+document.addEventListener('fullscreenchange',        () => setFullscreenLabel(!!document.fullscreenElement));
+document.addEventListener('webkitfullscreenchange',  () => setFullscreenLabel(!!document.webkitFullscreenElement));
 
 // ══════════════════════════════════════════════════════════
 //  MAIN INIT
