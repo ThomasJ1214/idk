@@ -204,10 +204,16 @@ function onResults(results) {
   const hasFace = !!(results.faceLandmarks && results.faceLandmarks.length > 0);
 
   if (showFace && hasFace) {
-    // Draw face contours (eyes, lips, face oval) — lightweight vs full tesselation
+    // Draw face contours — same colour/weight as hand skeleton
     drawConnectors(ctx, results.faceLandmarks, FACEMESH_CONTOURS, {
-      color: 'rgba(108,99,255,0.45)',
-      lineWidth: 1,
+      color: '#6c63ff',
+      lineWidth: 2,
+    });
+    drawLandmarks(ctx, results.faceLandmarks, {
+      color: '#00d4ff',
+      fillColor: '#00d4ff',
+      radius: 1.5,
+      lineWidth: 0,
     });
 
     // Classify and display expression
