@@ -462,27 +462,55 @@ async function startCamera(deviceId) {
     return;
   }
 
-  // Wait until the camera resolution is known (videoWidth/Height populated).
-  // On some iOS browsers these can still be 0 immediately after play() resolves.
+  // Wait until the camera resolution is known.
+  // On some iOS browsers videoWidth can still be 0 right after play() resolves.
   if (!videoEl.videoWidth) {
     await new Promise(r => videoEl.addEventListener('loadedmetadata', r, { once: true }));
   }
 
-  // Build the tracking canvas at the camera's ACTUAL aspect ratio.
-  // drawImage(videoEl, 0, 0, trackW, trackH) then fills the canvas without
-  // distortion, so MediaPipe landmarks come back in the same coordinate space
-  // the video occupies on screen — perfect overlay alignment on all devices.
   const vW = videoEl.videoWidth  || EXPORT_W;
   const vH = videoEl.videoHeight || EXPORT_H;
-  const trackH = Math.round(TRACK_W * vH / vW);
 
+  // ── Pin the canvas-wrapper to exactly the displayed video content area ──
+  //
+  // The video uses object-fit: contain in an absolute 100%×100% element.
+  // That means the actual content may be letterboxed (centred with black bars).
+  // The canvas-wrapper must cover exactly that content area — no more, no less —
+  // otherwise the overlay appears in a differently-sized or -positioned box.
+  //
+  // Reproduce the object-fit: contain placement math in JS and apply it via
+  // inline styles so the canvas-wrapper (position: absolute) sits perfectly
+  // on top of the content, whatever the screen size or camera aspect ratio.
+  const contW = videoEl.clientWidth;   // == cam-viewport CSS width
+  const contH = videoEl.clientHeight;  // == cam-viewport CSS height
+  const videoAR   = vW / vH;
+  const contAR    = contW / contH;
+  let dispW, dispH, offX, offY;
+  if (videoAR > contAR) {
+    // Video wider than viewport → letterboxed top/bottom
+    dispW = contW;                  dispH = contW / videoAR;
+    offX  = 0;                      offY  = (contH - dispH) / 2;
+  } else {
+    // Video taller (or same AR) → pillarboxed left/right
+    dispH = contH;                  dispW = contH * videoAR;
+    offX  = (contW - dispW) / 2;   offY  = 0;
+  }
+  const canvasWrapper = document.querySelector('.canvas-wrapper');
+  canvasWrapper.style.left   = `${offX}px`;
+  canvasWrapper.style.top    = `${offY}px`;
+  canvasWrapper.style.width  = `${dispW}px`;
+  canvasWrapper.style.height = `${dispH}px`;
+
+  // Tracking canvas at the same AR as the camera so drawImage() has zero
+  // distortion.  Landmarks then come back in the video's native coordinate
+  // space and map perfectly onto the canvas-wrapper area above.
+  const trackH = Math.round(TRACK_W * vH / vW);
   const trackCanvas = document.createElement('canvas');
   trackCanvas.width  = TRACK_W;
   trackCanvas.height = trackH;
   const trackCtx = trackCanvas.getContext('2d');
 
-  // Pre-size overlay canvas now so the layout is correct from the first frame
-  // (avoids the 300×150 browser-default until onResults fires).
+  // Pre-size overlay canvas to avoid a layout flash on first onResults.
   resizeCanvas(TRACK_W, trackH);
 
   let shownActive = false;
