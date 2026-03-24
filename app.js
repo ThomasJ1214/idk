@@ -43,13 +43,25 @@ const leftEyeStateEl  = document.getElementById('leftEyeState');
 const rightEyeStateEl = document.getElementById('rightEyeState');
 const browsStateEl    = document.getElementById('browsState');
 
-// ── DOM refs — toggles ────────────────────────────────────
-const toggleHands = document.getElementById('toggleHands');
-const toggleFace  = document.getElementById('toggleFace');
+// ── DOM refs — toggles + drawing ─────────────────────────
+const toggleHands   = document.getElementById('toggleHands');
+const toggleFace    = document.getElementById('toggleFace');
+const toggleDrawBtn = document.getElementById('toggleDraw');
+const screenshotBtn = document.getElementById('screenshotBtn');
+const drawToolbar   = document.getElementById('drawToolbar');
+const clearDrawBtn  = document.getElementById('clearDraw');
+const colorSwatches = document.querySelectorAll('.color-swatch');
+
+// ── Drawing canvas ────────────────────────────────────────
+const drawingCanvas = document.getElementById('drawingCanvas');
+const drawCtx       = drawingCanvas.getContext('2d');
 
 // ── State ─────────────────────────────────────────────────
 let showHands       = true;
 let showFace        = true;
+let drawMode        = false;
+let drawColor       = '#ff6584';
+let lastDrawPoint   = null;
 let currentStream   = null;
 let mediapipeCamera = null;
 let holisticModel   = null;
@@ -183,8 +195,10 @@ function classifyExpression(lm) {
 //  CANVAS
 // ══════════════════════════════════════════════════════════
 function resizeCanvas(w, h) {
-  canvas.width  = w;
-  canvas.height = h;
+  canvas.width         = w;
+  canvas.height        = h;
+  drawingCanvas.width  = w;
+  drawingCanvas.height = h;
 }
 
 // ══════════════════════════════════════════════════════════
@@ -292,6 +306,53 @@ function onResults(results) {
 
   } else {
     infoPanel.style.display = 'none';
+  }
+
+  // ── Air Drawing ───────────────────────────────────────
+  if (drawMode) {
+    const penHand = leftLM || rightLM;
+    if (penHand) {
+      const indexUp = isFingerExtended(penHand, LM.INDEX_TIP, LM.INDEX_PIP);
+      const tip = penHand[LM.INDEX_TIP];
+      const px = tip.x * w;
+      const py = tip.y * h;
+
+      if (indexUp) {
+        // Draw stroke on persistent drawing canvas
+        if (lastDrawPoint) {
+          drawCtx.beginPath();
+          drawCtx.moveTo(lastDrawPoint.x, lastDrawPoint.y);
+          drawCtx.lineTo(px, py);
+          drawCtx.strokeStyle = drawColor;
+          drawCtx.lineWidth   = 5;
+          drawCtx.lineCap     = 'round';
+          drawCtx.lineJoin    = 'round';
+          drawCtx.stroke();
+        }
+        lastDrawPoint = { x: px, y: py };
+
+        // Cursor ring while drawing
+        ctx.beginPath();
+        ctx.arc(px, py, 10, 0, 2 * Math.PI);
+        ctx.strokeStyle = drawColor;
+        ctx.lineWidth   = 3;
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(px, py, 3, 0, 2 * Math.PI);
+        ctx.fillStyle = drawColor;
+        ctx.fill();
+      } else {
+        lastDrawPoint = null;
+        // Dim cursor when pen is "up" (other fingers down)
+        ctx.beginPath();
+        ctx.arc(px, py, 7, 0, 2 * Math.PI);
+        ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+        ctx.lineWidth   = 2;
+        ctx.stroke();
+      }
+    } else {
+      lastDrawPoint = null; // no hand visible
+    }
   }
 
   ctx.restore();
@@ -430,17 +491,45 @@ cameraSelect.addEventListener('change', () => {
 toggleHands.addEventListener('click', () => {
   showHands = !showHands;
   toggleHands.classList.toggle('active', showHands);
-  if (!showHands) {
-    infoPanel.style.display = 'none';
-  }
+  if (!showHands) infoPanel.style.display = 'none';
 });
 
 toggleFace.addEventListener('click', () => {
   showFace = !showFace;
   toggleFace.classList.toggle('active', showFace);
-  if (!showFace) {
-    facePanel.style.display = 'none';
-  }
+  if (!showFace) facePanel.style.display = 'none';
+});
+
+toggleDrawBtn.addEventListener('click', () => {
+  drawMode = !drawMode;
+  toggleDrawBtn.classList.toggle('active', drawMode);
+  drawToolbar.style.display = drawMode ? 'flex' : 'none';
+  if (!drawMode) lastDrawPoint = null;
+});
+
+clearDrawBtn.addEventListener('click', () => {
+  drawCtx.clearRect(0, 0, drawingCanvas.width, drawingCanvas.height);
+});
+
+colorSwatches.forEach(swatch => {
+  swatch.addEventListener('click', () => {
+    colorSwatches.forEach(s => s.classList.remove('active'));
+    swatch.classList.add('active');
+    drawColor = swatch.dataset.color;
+  });
+});
+
+screenshotBtn.addEventListener('click', () => {
+  const tmp    = document.createElement('canvas');
+  tmp.width    = canvas.width;
+  tmp.height   = canvas.height;
+  const tCtx   = tmp.getContext('2d');
+  tCtx.drawImage(canvas, 0, 0);
+  tCtx.drawImage(drawingCanvas, 0, 0);
+  const link   = document.createElement('a');
+  link.download = `handtrack-${Date.now()}.png`;
+  link.href     = tmp.toDataURL('image/png');
+  link.click();
 });
 
 // ══════════════════════════════════════════════════════════

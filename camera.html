@@ -26,7 +26,9 @@
       <div class="overlay-toggles">
         <button class="toggle-btn active" id="toggleHands">✋ Hands</button>
         <button class="toggle-btn active" id="toggleFace">😊 Face</button>
+        <button class="toggle-btn" id="toggleDraw">✏️ Draw</button>
       </div>
+      <button class="save-btn" id="screenshotBtn">📸 Save</button>
       <div class="status-dot">
         <span class="dot" id="statusDot"></span>
         <span id="statusText">Initializing…</span>
@@ -46,8 +48,11 @@
     <!-- Hidden video source -->
     <video id="videoEl" autoplay playsinline muted></video>
 
-    <!-- Canvas for video + skeleton overlay -->
-    <canvas id="overlayCanvas"></canvas>
+    <!-- Canvas stack: overlay (redrawn each frame) + drawing (persistent) -->
+    <div class="canvas-wrapper">
+      <canvas id="overlayCanvas"></canvas>
+      <canvas id="drawingCanvas"></canvas>
+    </div>
 
     <!-- Face expression panel (top-left) -->
     <div class="overlay-panel face-panel" id="facePanel" style="display:none">
@@ -86,6 +91,17 @@
     <!-- Hand count indicator -->
     <div class="overlay-panel hand-count-panel" id="handCountPanel" style="display:none">
       Hands: <strong id="handCount">0</strong> &nbsp;|&nbsp; Face: <strong id="faceDetected">No</strong>
+    </div>
+
+    <!-- Draw toolbar (bottom-centre, visible when draw mode active) -->
+    <div class="overlay-panel draw-toolbar" id="drawToolbar" style="display:none">
+      <button class="color-swatch active" data-color="#ff6584" style="background:#ff6584" title="Pink"></button>
+      <button class="color-swatch" data-color="#febc2e" style="background:#febc2e" title="Yellow"></button>
+      <button class="color-swatch" data-color="#28c840" style="background:#28c840" title="Green"></button>
+      <button class="color-swatch" data-color="#00d4ff" style="background:#00d4ff" title="Cyan"></button>
+      <button class="color-swatch" data-color="#ffffff" style="background:#ffffff" title="White"></button>
+      <div class="toolbar-divider"></div>
+      <button class="toggle-btn" id="clearDraw">🗑 Clear</button>
     </div>
 
     <!-- No-camera message -->
