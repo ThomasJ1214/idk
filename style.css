@@ -491,6 +491,59 @@ footer {
 @keyframes spin { to { transform: rotate(360deg); } }
 .loading-overlay p { color: var(--muted); font-size: 0.9rem; }
 
+/* Overlay toggle buttons */
+.overlay-toggles {
+  display: flex;
+  gap: 6px;
+}
+.toggle-btn {
+  padding: 7px 14px;
+  border-radius: 20px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+  white-space: nowrap;
+}
+.toggle-btn:hover {
+  background: rgba(255,255,255,0.09);
+  color: var(--text);
+}
+.toggle-btn.active {
+  background: rgba(108,99,255,0.22);
+  border-color: rgba(108,99,255,0.55);
+  color: #fff;
+}
+
+/* Face expression panel (top-left) */
+.face-panel {
+  top: 16px; left: 16px;
+  min-width: 190px;
+  background: rgba(10,10,15,0.82);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px 18px;
+  backdrop-filter: blur(10px);
+}
+.face-panel h4 {
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+.expression-label {
+  font-size: 1.3rem;
+  font-weight: 800;
+  color: var(--accent2);
+  margin-bottom: 12px;
+  min-height: 1.7rem;
+}
+
 /* Two-hand layout: show second hand info */
 .second-hand {
   display: none;
@@ -505,7 +558,10 @@ footer {
 /* Responsive */
 @media (max-width: 600px) {
   .home-nav { padding: 14px 20px; }
-  .info-panel { min-width: 160px; top: 8px; right: 8px; padding: 12px; }
+  .info-panel { min-width: 140px; top: 8px; right: 8px; padding: 10px 12px; }
+  .face-panel { min-width: 140px; top: 8px; left: 8px; padding: 10px 12px; }
   .gesture-label { font-size: 1.1rem; }
-  .cam-header { gap: 10px; }
+  .expression-label { font-size: 1rem; }
+  .cam-header { gap: 8px; }
+  .toggle-btn { padding: 6px 10px; font-size: 0.78rem; }
 }

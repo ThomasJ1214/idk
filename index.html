@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>HandTrack — Real-Time Hand Tracking</title>
+  <title>HandTrack — Real-Time Hand &amp; Face Tracking</title>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
@@ -20,10 +20,10 @@
   <section class="hero">
     <div class="hero-bg"></div>
     <div class="hero-badge">✦ Browser-native · No install · No data sent</div>
-    <h1>Track Your Hands<br><span>In Real Time</span></h1>
+    <h1>Track Hands &amp; Face<br><span>In Real Time</span></h1>
     <p class="hero-sub">
-      HandTrack uses your webcam and on-device AI to detect hand landmarks,
-      recognize gestures, and display live coordinates — all inside your browser.
+      HandTrack uses your webcam and on-device AI to detect hand gestures,
+      face landmarks, and live expressions — all running privately inside your browser.
     </p>
     <div class="hero-cta">
       <a href="camera.html" class="btn btn-primary">
@@ -44,7 +44,7 @@
         <svg viewBox="0 0 80 80" fill="none" xmlns="http://www.w3.org/2000/svg">
           <path d="M40 10 L40 70 M20 30 L60 30 M15 50 L65 50" stroke="#6c63ff" stroke-width="2"/>
         </svg>
-        <div class="preview-label">✋ Open Hand</div>
+        <div class="preview-label">😊 Smiling · ✋ Open Hand</div>
         <div class="preview-coords">
           X: 0.512 · 368px<br>
           Y: 0.341 · 245px
@@ -114,22 +114,32 @@
       <div class="feature-card">
         <div class="feature-icon">🤖</div>
         <h3>AI Landmark Detection</h3>
-        <p>MediaPipe Hands detects 21 key points on each hand 30+ times per second, directly inside your browser using WebAssembly.</p>
+        <p>MediaPipe Holistic detects 21 landmarks per hand plus 468 face mesh points in a single inference pass — 30+ fps in your browser.</p>
       </div>
       <div class="feature-card">
         <div class="feature-icon">🦴</div>
         <h3>Skeleton Overlay</h3>
-        <p>A live skeletal mesh is drawn over your camera feed, connecting all finger joints and palm landmarks in real time.</p>
+        <p>A live skeletal mesh is drawn over your camera feed, connecting finger joints and face contours (eyes, lips, oval) in real time.</p>
       </div>
       <div class="feature-card">
         <div class="feature-icon">✋</div>
         <h3>Gesture Recognition</h3>
-        <p>Recognizes five hand poses: Open Hand, Fist, Pointing, Peace sign, and Thumbs Up — updated every frame.</p>
+        <p>Recognizes eight hand poses: Open Hand, Fist, Pointing, Peace, Thumbs Up, Call Me, Rock, and Three — updated every frame.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">😶</div>
+        <h3>Face Expressions</h3>
+        <p>Detects Smiling, Frowning, Surprised, Eyes Closed, and Brows Raised using rule-based analysis of 468 face landmarks — no extra model needed.</p>
       </div>
       <div class="feature-card">
         <div class="feature-icon">📍</div>
         <h3>Live Coordinates</h3>
-        <p>See your wrist position as both a normalized ratio (0–1) and pixel coordinates, updated continuously.</p>
+        <p>See your wrist position as both a normalized ratio (0–1) and pixel coordinates, updated continuously for each detected hand.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">🎛</div>
+        <h3>Overlay Controls</h3>
+        <p>Toggle hand tracking and face tracking on or off independently mid-session to focus on what matters to you.</p>
       </div>
       <div class="feature-card">
         <div class="feature-icon">🔒</div>

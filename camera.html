@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>HandTrack — Live Camera</title>
+  <title>HandTrack — Live Camera &amp; Face Tracking</title>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
@@ -23,6 +23,10 @@
           <option value="">Loading cameras…</option>
         </select>
       </div>
+      <div class="overlay-toggles">
+        <button class="toggle-btn active" id="toggleHands">✋ Hands</button>
+        <button class="toggle-btn active" id="toggleFace">😊 Face</button>
+      </div>
       <div class="status-dot">
         <span class="dot" id="statusDot"></span>
         <span id="statusText">Initializing…</span>
@@ -36,7 +40,7 @@
     <!-- Loading overlay -->
     <div class="loading-overlay" id="loadingOverlay">
       <div class="spinner"></div>
-      <p id="loadingText">Loading hand tracking model…</p>
+      <p id="loadingText">Loading tracking model…</p>
     </div>
 
     <!-- Hidden video source -->
@@ -45,9 +49,19 @@
     <!-- Canvas for video + skeleton overlay -->
     <canvas id="overlayCanvas"></canvas>
 
-    <!-- Gesture + Coordinates panel (first / only hand) -->
+    <!-- Face expression panel (top-left) -->
+    <div class="overlay-panel face-panel" id="facePanel" style="display:none">
+      <h4>Expression</h4>
+      <div class="expression-label" id="expressionLabel">—</div>
+      <div class="coord-row"><span>Mouth</span><span id="mouthState">—</span></div>
+      <div class="coord-row"><span>Left Eye</span><span id="leftEyeState">—</span></div>
+      <div class="coord-row"><span>Right Eye</span><span id="rightEyeState">—</span></div>
+      <div class="coord-row"><span>Brows</span><span id="browsState">—</span></div>
+    </div>
+
+    <!-- Hand gesture + coordinates panel (top-right) -->
     <div class="overlay-panel info-panel" id="infoPanel" style="display:none">
-      <h4>Hand 1</h4>
+      <h4>Left Hand</h4>
       <div class="gesture-label" id="gestureLabel">—</div>
       <div>
         <div class="coord-row"><span>X</span><span id="coordX">—</span></div>
@@ -56,9 +70,9 @@
         <div class="coord-row"><span>Pixel Y</span><span id="pixelY">—</span></div>
       </div>
 
-      <!-- Second hand section -->
+      <!-- Right hand section -->
       <div class="second-hand" id="secondHand">
-        <h4>Hand 2</h4>
+        <h4>Right Hand</h4>
         <div class="gesture-label" id="gestureLabel2">—</div>
         <div>
           <div class="coord-row"><span>X</span><span id="coordX2">—</span></div>
@@ -71,7 +85,7 @@
 
     <!-- Hand count indicator -->
     <div class="overlay-panel hand-count-panel" id="handCountPanel" style="display:none">
-      Hands detected: <strong id="handCount">0</strong>
+      Hands: <strong id="handCount">0</strong> &nbsp;|&nbsp; Face: <strong id="faceDetected">No</strong>
     </div>
 
     <!-- No-camera message -->
@@ -86,7 +100,7 @@
 <!-- MediaPipe via CDN -->
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
-<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/holistic/holistic.js" crossorigin="anonymous"></script>
 
 <script src="app.js"></script>
 </body>
