@@ -74,16 +74,16 @@ document.body.dataset.platform = isIOS ? 'ios' : isAndroid ? 'android' : 'deskto
 if (isMobile) flipCameraBtn.style.display = 'inline-flex';
 
 // ── State ─────────────────────────────────────────────────
-let showHands       = true;
-let showFace        = true;
-let drawMode        = false;
-let drawColor       = '#ff6584';
-let lastDrawPoint   = null;
-let currentStream   = null;
-let mediapipeCamera = null;
-let holisticModel   = null;
-let modelReady      = false;
-let currentFacing   = 'user'; // 'user' | 'environment'
+let showHands      = true;
+let showFace       = true;
+let drawMode       = false;
+let drawColor      = '#ff6584';
+let lastDrawPoint  = null;
+let currentStream  = null;
+let holisticModel  = null;
+let modelReady     = false;
+let currentFacing  = 'user';   // 'user' | 'environment'
+let frameLoopToken = 0;        // incremented on each startCamera; old loops self-cancel
 
 // ── FPS tracking ──────────────────────────────────────────
 let fpsFrameCount = 0;
@@ -432,24 +432,24 @@ function initModel() {
 //  CAMERA
 // ══════════════════════════════════════════════════════════
 async function startCamera(deviceId) {
+  // Give this invocation a unique token; any older rAF loop that is still
+  // awaiting holisticModel.send() will see a mismatched token and stop.
+  const myToken = ++frameLoopToken;
+
   if (currentStream) {
     currentStream.getTracks().forEach(t => t.stop());
     currentStream = null;
   }
-  if (mediapipeCamera) {
-    mediapipeCamera.stop();
-    mediapipeCamera = null;
-  }
 
   setStatus('loading', 'Starting camera…');
+  loadingText.textContent = 'Starting camera…';
 
-  // Request full 720p from the camera so videoEl has a high-res source
-  // for exports; MediaPipe processes at TRACK_W×TRACK_H for speed
   const constraints = {
     video: {
       deviceId: deviceId ? { exact: deviceId } : undefined,
       width:    { ideal: EXPORT_W },
       height:   { ideal: EXPORT_H },
+      // facingMode only when no specific deviceId (used by flip button)
       facingMode: deviceId ? undefined : { ideal: currentFacing },
     },
     audio: false,
@@ -467,26 +467,37 @@ async function startCamera(deviceId) {
     return;
   }
 
-  // MediaPipe processes at lower tracking resolution for performance
-  mediapipeCamera = new Camera(videoEl, {
-    onFrame: async () => {
-      if (holisticModel) await holisticModel.send({ image: videoEl });
-    },
-    width:  TRACK_W,
-    height: TRACK_H,
-  });
+  // Small canvas used to downsample each frame to tracking resolution
+  // before sending to MediaPipe — keeps processing fast.
+  const trackCanvas    = document.createElement('canvas');
+  trackCanvas.width    = TRACK_W;
+  trackCanvas.height   = TRACK_H;
+  const trackCtx       = trackCanvas.getContext('2d');
+  let shownActive      = false;
 
   loadingText.textContent = 'Loading tracking model…';
 
-  mediapipeCamera.start().then(() => {
-    loadingOverlay.style.display = 'none';
-    setStatus('active', 'Tracking active');
-    modelReady = true;
-  }).catch(err => {
-    console.error('MediaPipe camera error:', err);
-    setStatus('error', 'Tracking failed to start');
-    loadingOverlay.style.display = 'none';
-  });
+  const loop = async () => {
+    // Stop if a newer startCamera call has taken over
+    if (frameLoopToken !== myToken) return;
+
+    if (holisticModel && videoEl.readyState >= 2) {
+      trackCtx.drawImage(videoEl, 0, 0, TRACK_W, TRACK_H);
+      await holisticModel.send({ image: trackCanvas });
+
+      if (!shownActive) {
+        shownActive = true;
+        loadingOverlay.style.display = 'none';
+        setStatus('active', 'Tracking active');
+        modelReady = true;
+      }
+    }
+
+    // Re-check token after the await before scheduling next frame
+    if (frameLoopToken === myToken) requestAnimationFrame(loop);
+  };
+
+  requestAnimationFrame(loop);
 }
 
 async function populateCameras() {
