@@ -174,41 +174,50 @@ async function populateCameras() {
   });
 }
 
-// ── Depth model loading (Transformers.js) ──────────────────────────────────
+// ── Depth model loading (Transformers.js v2) ───────────────────────────────
+//
+// Library:  @xenova/transformers@2  — stable, well-tested CDN build
+// Model:    Xenova/depth-anything-small-hf  (DepthAnything V1 Small)
+//           quantized: true → ~25 MB int8 ONNX model, cached by the browser
+//           after first download so subsequent visits are instant.
 async function loadDepthModel() {
-  modelStatus.textContent = 'Downloading depth AI model (~25 MB) — one-time, cached after first use…';
+  modelStatus.textContent = 'Downloading depth model (~25 MB) — one-time, cached after first use…';
 
   try {
-    // Dynamic import keeps the module loading deferred (no upfront bundle)
+    // Dynamic import so the heavy library is only fetched when scan.html is opened
     const { pipeline, env } = await import(
-      'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3/dist/transformers.min.js'
+      'https://cdn.jsdelivr.net/npm/@xenova/transformers@2/dist/transformers.min.js'
     );
 
-    // Allow local model caching (uses browser Cache API / IndexedDB)
-    env.allowLocalModels = true;
-    env.useBrowserCache  = true;
-
-    const device = (typeof navigator.gpu !== 'undefined') ? 'webgpu' : 'wasm';
+    // Point the WASM backend at the same CDN path as the JS so relative
+    // .wasm file loads succeed (avoids "failed to fetch" on the .wasm files)
+    env.backends.onnx.wasm.wasmPaths =
+      'https://cdn.jsdelivr.net/npm/@xenova/transformers@2/dist/';
 
     depthPipeline = await pipeline(
       'depth-estimation',
-      'Xenova/depth-anything-v2-small',
+      'Xenova/depth-anything-small-hf',
       {
-        device,
-        progress_callback: ({ status, loaded, total }) => {
-          if (status === 'progress' && total > 0) {
-            const pct = Math.round((loaded / total) * 100);
-            modelStatus.textContent = `Downloading depth model: ${pct}% — cached after first use`;
+        quantized: true,          // int8 → ~25 MB instead of ~98 MB fp32
+        progress_callback: (p) => {
+          // v2 progress object: { status, progress (0-100), loaded, total }
+          if (p.status === 'progress' && p.total > 0) {
+            modelStatus.textContent =
+              `Downloading depth model: ${Math.round(p.progress)}%`;
+          } else if (p.status === 'done') {
+            modelStatus.textContent = 'Model downloaded ✓';
           }
         },
       }
     );
 
-    // Warmup: one tiny inference so WASM/WebGPU shaders compile before first
-    // real capture (avoids a multi-second freeze on the first actual press).
+    // Warmup: one tiny inference so WASM shaders compile before the first
+    // real capture — prevents a multi-second freeze on the first press.
     modelStatus.textContent = 'Warming up model…';
     const warmup = document.createElement('canvas');
     warmup.width = 64; warmup.height = 64;
+    // Draw something so the canvas isn't blank (avoids potential edge cases)
+    warmup.getContext('2d').fillRect(0, 0, 64, 64);
     await depthPipeline(warmup);
 
     modelStatus.textContent = '✓ Model ready — click Start Scan when you\'re set!';
