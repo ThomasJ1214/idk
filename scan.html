@@ -19,6 +19,16 @@
       Home
     </a>
     <span class="scan-nav-title">3D Body Scan</span>
+
+    <!-- Camera selector (desktop/tablet) — same pattern as tracking app -->
+    <div class="cam-select-wrap scan-cam-select" style="margin-left:auto">
+      <select id="scanCameraSelect" title="Select camera">
+        <option value="">Loading cameras…</option>
+      </select>
+    </div>
+
+    <!-- Flip camera (mobile only, shown via JS) -->
+    <button class="icon-btn" id="scanFlipBtn" title="Flip camera" style="display:none">🔄</button>
   </nav>
 
   <!-- ── Processing overlay (shown while building mesh) ── -->

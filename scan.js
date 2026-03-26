@@ -36,7 +36,8 @@ const ANGLE_STEPS = [
 
 // ── Platform detection ─────────────────────────────────────────────────────
 const isIOS     = /iP(hone|ad|od)/.test(navigator.userAgent);
-const isMobile  = isIOS || /Mobi|Android/i.test(navigator.userAgent);
+const isAndroid = /Android/i.test(navigator.userAgent);
+const isMobile  = isIOS || isAndroid || window.matchMedia('(pointer: coarse)').matches;
 // Fewer vertices on mobile to keep build time and memory manageable
 const VERT_STRIDE = isMobile ? 6 : 4; // sample every N-th pixel in each axis
 
@@ -65,10 +66,15 @@ const downloadBtn      = document.getElementById('downloadBtn');
 const rescanBtn        = document.getElementById('rescanBtn');
 const meshStats        = document.getElementById('meshStats');
 
+const cameraSelect     = document.getElementById('scanCameraSelect');
+const flipBtn          = document.getElementById('scanFlipBtn');
+
 // ── Mutable state ──────────────────────────────────────────────────────────
 let depthPipeline  = null;   // Transformers.js pipeline instance
 let segmenter      = null;   // MediaPipe SelfieSegmentation instance
 let currentStream  = null;   // active MediaStream
+let currentFacing  = 'user';        // 'user' | 'environment'
+let currentDeviceId = '';           // explicit deviceId, or '' for facingMode
 
 let captures       = [];     // array of per-angle capture data
 let finalMesh      = null;   // THREE.Mesh of the assembled scan
@@ -95,21 +101,27 @@ function hideLoading() {
 }
 
 // ── Camera helpers ─────────────────────────────────────────────────────────
-async function startCamera(videoEl) {
+
+/**
+ * Start the camera on the given video element.
+ * deviceId  — use a specific camera (from the dropdown); overrides facingMode.
+ * If deviceId is empty/undefined, uses currentFacing ('user' | 'environment').
+ */
+async function startCamera(videoEl, deviceId) {
   if (currentStream) {
     currentStream.getTracks().forEach(t => t.stop());
     currentStream = null;
   }
-  const constraints = {
-    video: {
-      facingMode: 'user',
-      width:  { ideal: 640 },
-      height: { ideal: 480 },
-    },
-    audio: false,
-  };
+
+  const videoConstraints = deviceId
+    ? { deviceId: { exact: deviceId }, width: { ideal: 640 }, height: { ideal: 480 } }
+    : { facingMode: { ideal: currentFacing }, width: { ideal: 640 }, height: { ideal: 480 } };
+
   try {
-    currentStream = await navigator.mediaDevices.getUserMedia(constraints);
+    currentStream = await navigator.mediaDevices.getUserMedia({
+      video: videoConstraints,
+      audio: false,
+    });
     videoEl.srcObject = currentStream;
     await videoEl.play();
   } catch (err) {
@@ -123,6 +135,43 @@ function stopCamera() {
     currentStream.getTracks().forEach(t => t.stop());
     currentStream = null;
   }
+}
+
+/**
+ * Enumerate video input devices and populate the camera selector.
+ * Mirrors the same pattern used in the tracking app (app.js populateCameras).
+ */
+async function populateCameras() {
+  // Request camera permission first so browsers expose device labels
+  try {
+    const tmp = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+    tmp.getTracks().forEach(t => t.stop());
+  } catch { /* labels may be empty — carry on */ }
+
+  let devices;
+  try {
+    devices = await navigator.mediaDevices.enumerateDevices();
+  } catch (err) {
+    console.warn('[scan] enumerateDevices failed:', err);
+    return;
+  }
+
+  const videoDevices = devices.filter(d => d.kind === 'videoinput');
+  cameraSelect.innerHTML = '';
+
+  if (videoDevices.length === 0) {
+    const opt = document.createElement('option');
+    opt.textContent = 'No cameras found';
+    cameraSelect.appendChild(opt);
+    return;
+  }
+
+  videoDevices.forEach((dev, i) => {
+    const opt = document.createElement('option');
+    opt.value       = dev.deviceId;
+    opt.textContent = dev.label || `Camera ${i + 1}`;
+    cameraSelect.appendChild(opt);
+  });
 }
 
 // ── Depth model loading (Transformers.js) ──────────────────────────────────
@@ -590,9 +639,13 @@ async function runScanFlow() {
   grabCanvas.height = CAPTURE_H;
   grabCtx = grabCanvas.getContext('2d', { willReadFrequently: true });
 
-  // Switch camera to capture video element
-  await startCamera(captureVideo);
+  // Switch camera to capture video element (preserve selected device)
+  await startCamera(captureVideo, currentDeviceId);
   showPhase(capturePhase);
+
+  // Disable camera controls during capture to prevent mid-scan disruption
+  cameraSelect.disabled = true;
+  flipBtn.disabled      = true;
 
   // Reset captures
   captures = [];
@@ -607,6 +660,10 @@ async function runScanFlow() {
   for (let i = 0; i < NUM_ANGLES; i++) {
     await captureAngle(i);
   }
+
+  // Re-enable camera controls now that capture is complete
+  cameraSelect.disabled = false;
+  flipBtn.disabled      = false;
 
   // Build the 3D model
   captureStatus.textContent = '';
@@ -623,7 +680,7 @@ async function runScanFlow() {
   if (!finalMesh) {
     alert('Could not build 3D model — no valid depth data. Please try again with better lighting.');
     showPhase(setupPhase);
-    await startCamera(setupVideo);
+    await startCamera(setupVideo, currentDeviceId);
     return;
   }
 
@@ -643,20 +700,51 @@ async function runScanFlow() {
 
 // ── Init ───────────────────────────────────────────────────────────────────
 async function init() {
-  // Start the setup preview camera
+  // Platform tag for CSS hooks (mirrors app.js pattern)
+  document.body.dataset.platform = isIOS ? 'ios' : isAndroid ? 'android' : 'desktop';
+
+  // Show flip button on mobile; hide camera dropdown on mobile (CSS handles it
+  // via .cam-select-wrap display:none at 600px, but we also show flip btn here)
+  if (isMobile) flipBtn.style.display = 'inline-flex';
+
+  // Enumerate cameras and populate the dropdown
+  await populateCameras();
+
+  // Start the setup preview with the first available camera
+  currentDeviceId = cameraSelect.options[0]?.value || '';
   try {
-    await startCamera(setupVideo);
+    await startCamera(setupVideo, currentDeviceId);
   } catch {
     // error message already set in startCamera
   }
 
   // Load depth model in the background while user reads instructions
-  loadDepthModel(); // intentionally not awaited — progress shown via modelStatus
+  loadDepthModel(); // not awaited — progress shown via modelStatus
 
-  // ── Event listeners ──
+  // ── Camera selector change ──
+  cameraSelect.addEventListener('change', async () => {
+    currentDeviceId = cameraSelect.value;
+    currentFacing   = 'user'; // reset facing when an explicit device is chosen
+    // Only restart camera on the setup preview (during capture it's locked)
+    if (setupPhase.style.display !== 'none') {
+      try { await startCamera(setupVideo, currentDeviceId); } catch { /* handled */ }
+    }
+  });
+
+  // ── Flip camera (mobile) ──
+  flipBtn.addEventListener('click', async () => {
+    currentFacing   = currentFacing === 'user' ? 'environment' : 'user';
+    currentDeviceId = ''; // clear explicit device so facingMode takes over
+    cameraSelect.selectedIndex = 0;
+    if (setupPhase.style.display !== 'none') {
+      try { await startCamera(setupVideo, currentDeviceId); } catch { /* handled */ }
+    }
+  });
+
+  // ── Start scan ──
   startScanBtn.addEventListener('click', async () => {
     if (!depthPipeline || startScanBtn.disabled) return;
-    startScanBtn.disabled = true;
+    startScanBtn.disabled    = true;
     startScanBtn.textContent = 'Starting…';
     stopCamera(); // release setup camera before opening capture camera
     try {
@@ -664,17 +752,21 @@ async function init() {
     } catch (err) {
       console.error('[scan] Scan flow error:', err);
       hideLoading();
+      cameraSelect.disabled = false;
+      flipBtn.disabled      = false;
       showPhase(setupPhase);
-      await startCamera(setupVideo);
-      startScanBtn.disabled  = false;
+      try { await startCamera(setupVideo, currentDeviceId); } catch { /* handled */ }
+      startScanBtn.disabled    = false;
       startScanBtn.textContent = 'Start Scan';
     }
   });
 
+  // ── Download ──
   downloadBtn.addEventListener('click', exportGLB);
 
+  // ── Scan again ──
   rescanBtn.addEventListener('click', async () => {
-    // Clean up Three.js
+    // Tear down Three.js viewer
     if (threeRAF) cancelAnimationFrame(threeRAF);
     if (finalMesh) {
       finalMesh.geometry.dispose();
@@ -690,8 +782,8 @@ async function init() {
     captures = [];
 
     showPhase(setupPhase);
-    try { await startCamera(setupVideo); } catch { /* handled */ }
-    startScanBtn.disabled  = !depthPipeline;
+    try { await startCamera(setupVideo, currentDeviceId); } catch { /* handled */ }
+    startScanBtn.disabled    = !depthPipeline;
     startScanBtn.textContent = 'Start Scan';
   });
 }

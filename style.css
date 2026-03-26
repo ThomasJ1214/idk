@@ -1061,3 +1061,7 @@ footer {
   .viewer-toolbar { gap: 8px; padding: 10px 12px; }
   .viewer-stats { display: none; }
 }
+
+/* Scan-nav camera select — slightly narrower than the tracking-app version */
+.scan-cam-select select { min-width: 150px; }
+@media (max-width: 900px) { .scan-cam-select select { min-width: 120px; } }
