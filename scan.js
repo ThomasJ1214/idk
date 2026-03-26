@@ -44,9 +44,14 @@ const VERT_STRIDE = isMobile ? 6 : 4; // sample every N-th pixel in each axis
 // ── DOM refs ───────────────────────────────────────────────────────────────
 const setupPhase       = document.getElementById('setupPhase');
 const capturePhase     = document.getElementById('capturePhase');
+const processingPhase  = document.getElementById('processingPhase');
 const viewerPhase      = document.getElementById('viewerPhase');
 const loadingOverlay   = document.getElementById('loadingOverlay');
 const loadingMsg       = document.getElementById('loadingMsg');
+
+const procTitle        = document.getElementById('procTitle');
+const procStatus       = document.getElementById('procStatus');
+const procBar          = document.getElementById('procBar');
 
 const setupVideo       = document.getElementById('setupVideo');
 const startScanBtn     = document.getElementById('startScanBtn');
@@ -63,6 +68,7 @@ const silhouetteWrap   = document.getElementById('silhouetteWrap');
 
 const viewer3d         = document.getElementById('viewer3d');
 const downloadBtn      = document.getElementById('downloadBtn');
+const downloadObjBtn   = document.getElementById('downloadObjBtn');
 const rescanBtn        = document.getElementById('rescanBtn');
 const meshStats        = document.getElementById('meshStats');
 
@@ -87,7 +93,7 @@ let grabCanvas, grabCtx;
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
 function showPhase(phaseEl) {
-  [setupPhase, capturePhase, viewerPhase].forEach(p => {
+  [setupPhase, capturePhase, processingPhase, viewerPhase].forEach(p => {
     p.style.display = (p === phaseEl) ? 'flex' : 'none';
   });
 }
@@ -645,6 +651,75 @@ async function exportGLB() {
   }
 }
 
+// ── OBJ Export ─────────────────────────────────────────────────────────────
+/**
+ * Export the final mesh as a Wavefront OBJ file.
+ * Vertex colors are written after the XYZ position on each "v" line
+ * (non-standard but supported by Blender, MeshLab, and most viewers).
+ */
+function exportOBJ() {
+  if (!finalMesh) return;
+  downloadObjBtn.disabled = true;
+  downloadObjBtn.textContent = 'Preparing…';
+
+  try {
+    const geo = finalMesh.geometry;
+    const pos = geo.attributes.position;
+    const col = geo.attributes.color;
+    const idx = geo.index;
+
+    const lines = [
+      '# HandTrack 3D Body Scan',
+      `# Vertices: ${pos.count}`,
+      'o BodyScan',
+      '',
+    ];
+
+    // Vertices (with optional per-vertex color extension)
+    for (let i = 0; i < pos.count; i++) {
+      const x = pos.getX(i).toFixed(5);
+      const y = pos.getY(i).toFixed(5);
+      const z = pos.getZ(i).toFixed(5);
+      if (col) {
+        const r = col.getX(i).toFixed(5);
+        const g = col.getY(i).toFixed(5);
+        const b = col.getZ(i).toFixed(5);
+        lines.push(`v ${x} ${y} ${z} ${r} ${g} ${b}`);
+      } else {
+        lines.push(`v ${x} ${y} ${z}`);
+      }
+    }
+
+    lines.push('');
+
+    // Faces (OBJ indices are 1-based)
+    if (idx) {
+      for (let i = 0; i < idx.count; i += 3) {
+        lines.push(`f ${idx.getX(i) + 1} ${idx.getX(i + 1) + 1} ${idx.getX(i + 2) + 1}`);
+      }
+    } else {
+      for (let i = 0; i < pos.count; i += 3) {
+        lines.push(`f ${i + 1} ${i + 2} ${i + 3}`);
+      }
+    }
+
+    const blob = new Blob([lines.join('\n')], { type: 'text/plain' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href     = url;
+    a.download = `body-scan-${Date.now()}.obj`;
+    a.click();
+    URL.revokeObjectURL(url);
+  } catch (err) {
+    console.error('[scan] OBJ export failed:', err);
+    alert('OBJ export failed. Please try again.');
+  } finally {
+    downloadObjBtn.disabled    = false;
+    downloadObjBtn.textContent = 'Save .obj';
+    downloadObjBtn.innerHTML   = `<svg width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 3v12"/></svg> Save .obj`;
+  }
+}
+
 // ── Main scan flow ─────────────────────────────────────────────────────────
 async function runScanFlow() {
   // Re-init scratch canvas
@@ -679,37 +754,64 @@ async function runScanFlow() {
   cameraSelect.disabled = false;
   flipBtn.disabled      = false;
 
-  // Build the 3D model
+  // ── Processing phase ──────────────────────────────────────────────────────
   captureStatus.textContent = '';
-  showLoading('Building 3D mesh — this may take a moment…');
-  await sleep(60); // yield to DOM paint
+  showPhase(processingPhase);
+  await sleep(60); // yield so the processing phase renders before heavy work
 
-  finalMesh = assembleModel();
-
-  // Free capture memory now that mesh is built
+  // Build slab geometries one-by-one with progress updates
+  const geos = [];
+  for (let i = 0; i < captures.length; i++) {
+    procStatus.textContent = `Building slab ${i + 1} of ${captures.length}…`;
+    procBar.style.width    = `${Math.round((i / captures.length) * 70)}%`;
+    await sleep(20); // yield to DOM between each heavy step
+    const g = buildSlabGeometry(captures[i]);
+    if (g) geos.push(g);
+    captures[i] = null; // free raw data as we go
+  }
   captures = [];
 
-  hideLoading();
-
-  if (!finalMesh) {
-    alert('Could not build 3D model — no valid depth data. Please try again with better lighting.');
+  if (geos.length === 0) {
     showPhase(setupPhase);
     await startCamera(setupVideo, currentDeviceId);
+    alert('No valid depth data found. Please try again with brighter, even lighting and a plain background.');
     return;
   }
 
-  // Show viewer
+  procStatus.textContent = 'Merging geometry…';
+  procBar.style.width    = '80%';
+  await sleep(20);
+
+  const merged = THREE.BufferGeometryUtils.mergeGeometries(geos, false);
+  geos.forEach(g => g.dispose());
+
+  procStatus.textContent = 'Centering model…';
+  procBar.style.width    = '90%';
+  await sleep(20);
+
+  merged.computeBoundingBox();
+  const centre = new THREE.Vector3();
+  merged.boundingBox.getCenter(centre);
+  merged.translate(-centre.x, -centre.y, -centre.z);
+
+  const mat = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide });
+  finalMesh = new THREE.Mesh(merged, mat);
+
+  procBar.style.width    = '100%';
+  procStatus.textContent = 'Done!';
+  await sleep(500);
+
+  // ── Export/viewer phase ───────────────────────────────────────────────────
   showPhase(viewerPhase);
-  await sleep(30); // ensure viewer3d has layout dimensions
+  await sleep(30); // ensure viewer3d has layout dimensions before init
   initViewer(finalMesh);
 
-  // Stats
   const vertCount = finalMesh.geometry.attributes.position.count;
   const triCount  = finalMesh.geometry.index
     ? finalMesh.geometry.index.count / 3
     : vertCount / 3;
   meshStats.textContent =
-    `${vertCount.toLocaleString()} vertices · ${Math.round(triCount).toLocaleString()} triangles`;
+    `${vertCount.toLocaleString()} verts · ${Math.round(triCount).toLocaleString()} tris`;
 }
 
 // ── Init ───────────────────────────────────────────────────────────────────
@@ -777,6 +879,7 @@ async function init() {
 
   // ── Download ──
   downloadBtn.addEventListener('click', exportGLB);
+  downloadObjBtn.addEventListener('click', exportOBJ);
 
   // ── Scan again ──
   rescanBtn.addEventListener('click', async () => {
