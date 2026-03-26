@@ -708,3 +708,356 @@ footer {
 
 /* Desktop: flip button never shown (shown via JS on mobile) */
 [data-platform="desktop"] #flipCameraBtn { display: none !important; }
+
+
+/* ════════════════════════════════════════
+   FEATURE CARD — SCAN HIGHLIGHT
+════════════════════════════════════════ */
+.feature-card--scan {
+  border-color: rgba(0,212,255,0.25);
+  background: linear-gradient(135deg, rgba(108,99,255,0.08), rgba(0,212,255,0.06));
+  position: relative;
+}
+.feature-badge {
+  display: inline-block;
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  color: #fff;
+  padding: 2px 7px;
+  border-radius: 20px;
+  vertical-align: middle;
+  margin-left: 6px;
+}
+.feature-card--scan code {
+  font-family: 'Cascadia Code', 'Fira Code', monospace;
+  font-size: 0.88em;
+  color: var(--accent2);
+  background: rgba(0,212,255,0.1);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+
+/* ════════════════════════════════════════
+   SCAN PAGE
+════════════════════════════════════════ */
+.scan-page {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* ── Scan nav ── */
+.scan-nav {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 20px;
+  background: rgba(10,10,15,0.9);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  z-index: 10;
+}
+.scan-nav-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.85rem;
+  color: var(--muted);
+  transition: color 0.15s;
+}
+.scan-nav-back:hover { color: var(--text); }
+.scan-nav-title {
+  font-size: 0.95rem;
+  font-weight: 700;
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* ── Phase container ── */
+.scan-phase {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  position: relative;
+}
+
+/* ── Loading overlay ── */
+.scan-loading-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(10,10,15,0.92);
+  backdrop-filter: blur(8px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+  z-index: 100;
+}
+.scan-loading-overlay p {
+  color: var(--muted);
+  font-size: 0.95rem;
+}
+
+/* ── Setup phase ── */
+.scan-setup-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  max-width: 720px;
+  height: 100%;
+  position: relative;
+}
+.scan-video-wrap {
+  position: relative;
+  width: 100%;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+.scan-video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transform: scaleX(-1);     /* mirror for selfie view */
+  display: block;
+}
+/* Instructions overlay on top of camera preview */
+.scan-instructions-panel {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to top, rgba(10,10,15,0.97) 0%, rgba(10,10,15,0.65) 55%, transparent 100%);
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  padding: 28px 24px 32px;
+  gap: 16px;
+}
+.scan-instructions-panel h2 {
+  font-size: 1.4rem;
+  font-weight: 800;
+  margin-bottom: 4px;
+}
+.scan-step-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.scan-step-list li {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 0.88rem;
+  color: var(--text);
+  line-height: 1.4;
+}
+.scan-step-num {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.72rem;
+  font-weight: 800;
+  color: #fff;
+  margin-top: 1px;
+}
+.scan-step-list strong { color: var(--accent2); }
+.scan-model-status {
+  font-size: 0.78rem;
+  color: var(--muted);
+  text-align: center;
+}
+#startScanBtn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* ── Capture phase ── */
+.scan-capture-inner {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+.capture-video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transform: scaleX(-1);
+}
+.capture-flash {
+  position: absolute;
+  inset: 0;
+  background: #fff;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.05s;
+  z-index: 5;
+}
+/* HUD on top of capture video */
+.capture-hud {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  pointer-events: none;
+  z-index: 10;
+  padding: 20px 20px 32px;
+}
+/* Top bar: progress dots */
+.capture-progress {
+  display: flex;
+  gap: 8px;
+  background: rgba(10,10,15,0.6);
+  backdrop-filter: blur(8px);
+  padding: 8px 16px;
+  border-radius: 40px;
+  border: 1px solid var(--border);
+  margin-top: 4px;
+}
+.progress-dot {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.1);
+  border: 2px solid rgba(255,255,255,0.2);
+  transition: all 0.3s;
+}
+.progress-dot.done {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.progress-dot.active {
+  background: transparent;
+  border-color: var(--accent2);
+  box-shadow: 0 0 10px var(--accent2);
+  animation: pulse 0.9s ease-in-out infinite;
+}
+/* Center: angle label + instruction */
+.capture-center {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  text-align: center;
+}
+.capture-angle-name {
+  font-size: 2rem;
+  font-weight: 900;
+  background: linear-gradient(135deg, #fff, var(--accent2));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  text-shadow: none;
+  line-height: 1.1;
+}
+.capture-angle-instruction {
+  font-size: 0.9rem;
+  color: rgba(255,255,255,0.7);
+  max-width: 260px;
+}
+/* Silhouette body outline for each angle */
+.silhouette-wrap {
+  width: 70px;
+  height: 120px;
+  opacity: 0.55;
+  margin: 4px 0;
+}
+/* Countdown number */
+.capture-countdown {
+  font-size: 6rem;
+  font-weight: 900;
+  line-height: 1;
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  transition: transform 0.1s;
+  min-height: 1em;
+}
+.capture-countdown.tick {
+  animation: countdown-pop 0.25s ease-out;
+}
+@keyframes countdown-pop {
+  0% { transform: scale(1.35); }
+  100% { transform: scale(1); }
+}
+/* Status text at bottom */
+.capture-status {
+  font-size: 0.82rem;
+  color: var(--muted);
+  min-height: 1.2em;
+  letter-spacing: 0.02em;
+}
+
+/* ── Viewer phase ── */
+.scan-viewer-phase {
+  flex-direction: column;
+}
+#viewer3d {
+  flex: 1;
+  width: 100%;
+  min-height: 0;
+  position: relative;
+  background: var(--bg);
+  overflow: hidden;
+}
+#viewer3d canvas {
+  display: block;
+  width: 100% !important;
+  height: 100% !important;
+}
+.viewer-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 20px;
+  background: rgba(18,18,26,0.95);
+  backdrop-filter: blur(12px);
+  border-top: 1px solid var(--border);
+  flex-wrap: wrap;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.viewer-stats {
+  font-size: 0.75rem;
+  color: var(--muted);
+  flex: 1;
+  text-align: right;
+  white-space: nowrap;
+}
+
+/* ── Responsive ── */
+@media (max-width: 600px) {
+  .scan-instructions-panel { padding: 20px 16px 24px; }
+  .scan-instructions-panel h2 { font-size: 1.15rem; }
+  .scan-step-list li { font-size: 0.82rem; }
+  .capture-angle-name { font-size: 1.4rem; }
+  .capture-countdown { font-size: 4.5rem; }
+  .silhouette-wrap { width: 52px; height: 90px; }
+  .viewer-toolbar { gap: 8px; padding: 10px 12px; }
+  .viewer-stats { display: none; }
+}

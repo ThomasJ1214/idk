@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <title>3D Body Scan — HandTrack</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body class="scan-page">
+
+  <!-- ── Navigation ── -->
+  <nav class="scan-nav">
+    <a href="index.html" class="scan-nav-back">
+      <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/>
+      </svg>
+      Home
+    </a>
+    <span class="scan-nav-title">3D Body Scan</span>
+  </nav>
+
+  <!-- ── Processing overlay (shown while building mesh) ── -->
+  <div class="scan-loading-overlay" id="loadingOverlay" style="display:none">
+    <div class="spinner"></div>
+    <p id="loadingMsg">Building 3D mesh…</p>
+  </div>
+
+  <!-- ════════════════════════════
+       PHASE 1 — Setup & Instructions
+  ═════════════════════════════ -->
+  <div class="scan-phase" id="setupPhase">
+    <div class="scan-setup-inner">
+      <div class="scan-video-wrap">
+        <video id="setupVideo" autoplay playsinline muted class="scan-video"></video>
+
+        <!-- Instructions panel overlaid on camera preview -->
+        <div class="scan-instructions-panel">
+          <h2>📷 Prepare for Your 3D Scan</h2>
+
+          <ul class="scan-step-list">
+            <li>
+              <span class="scan-step-num">1</span>
+              <span><strong>Distance:</strong> Stand <strong>3–4 feet</strong> from your camera so your full upper body is visible.</span>
+            </li>
+            <li>
+              <span class="scan-step-num">2</span>
+              <span><strong>Lighting:</strong> Use <strong>bright, even light</strong> from the front. Avoid backlighting or harsh shadows.</span>
+            </li>
+            <li>
+              <span class="scan-step-num">3</span>
+              <span><strong>Clothing:</strong> Wear <strong>fitted, non-reflective</strong> clothes. Avoid pure black, pure white, or loose fabric.</span>
+            </li>
+            <li>
+              <span class="scan-step-num">4</span>
+              <span><strong>Background:</strong> Stand in front of a <strong>plain, uncluttered wall</strong>.</span>
+            </li>
+            <li>
+              <span class="scan-step-num">5</span>
+              <span><strong>Rotation:</strong> You'll <strong>turn slowly</strong> through 8 positions (every 45°). Keep your feet planted and rotate your upper body. Stay as still as possible during each capture.</span>
+            </li>
+          </ul>
+
+          <button id="startScanBtn" class="btn btn-primary" disabled>
+            <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="9"/><path d="M12 8v4l3 3"/>
+            </svg>
+            Start Scan
+          </button>
+          <p class="scan-model-status" id="modelStatus">Downloading depth AI model (~25 MB) — one-time download, cached after…</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ════════════════════════════
+       PHASE 2 — Guided Capture
+  ═════════════════════════════ -->
+  <div class="scan-phase" id="capturePhase" style="display:none">
+    <div class="scan-capture-inner">
+      <!-- Live camera feed -->
+      <video id="captureVideo" autoplay playsinline muted class="capture-video"></video>
+
+      <!-- White flash on capture -->
+      <div class="capture-flash" id="captureFlash"></div>
+
+      <!-- HUD overlay -->
+      <div class="capture-hud">
+        <!-- Top: progress dots (filled by JS) -->
+        <div class="capture-progress" id="progressDots"></div>
+
+        <!-- Center: angle name + body silhouette + instruction -->
+        <div class="capture-center">
+          <div class="capture-angle-name" id="angleLabel">Get Ready</div>
+
+          <!-- SVG body silhouette — JS sets transform to suggest rotation angle -->
+          <div class="silhouette-wrap" id="silhouetteWrap">
+            <svg viewBox="0 0 70 120" fill="none" xmlns="http://www.w3.org/2000/svg" id="silhouetteSvg">
+              <!-- head -->
+              <ellipse cx="35" cy="14" rx="10" ry="12" fill="var(--accent2)" opacity="0.7"/>
+              <!-- neck -->
+              <rect x="31" y="25" width="8" height="7" rx="3" fill="var(--accent2)" opacity="0.6"/>
+              <!-- shoulders + torso -->
+              <path d="M12 38 Q10 34 18 32 L35 30 L52 32 Q60 34 58 38 L54 72 Q50 78 35 78 Q20 78 16 72 Z" fill="var(--accent2)" opacity="0.55"/>
+              <!-- arms -->
+              <path d="M14 36 Q4 50 8 70" stroke="var(--accent2)" stroke-width="7" stroke-linecap="round" opacity="0.5"/>
+              <path d="M56 36 Q66 50 62 70" stroke="var(--accent2)" stroke-width="7" stroke-linecap="round" opacity="0.5"/>
+              <!-- legs -->
+              <path d="M22 78 Q20 95 19 115" stroke="var(--accent2)" stroke-width="10" stroke-linecap="round" opacity="0.5"/>
+              <path d="M48 78 Q50 95 51 115" stroke="var(--accent2)" stroke-width="10" stroke-linecap="round" opacity="0.5"/>
+            </svg>
+          </div>
+
+          <div class="capture-angle-instruction" id="angleInstruction">Follow the prompts below</div>
+
+          <!-- Big countdown number -->
+          <div class="capture-countdown" id="captureCountdown"></div>
+        </div>
+
+        <!-- Bottom: status text -->
+        <div class="capture-status" id="captureStatus"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ════════════════════════════
+       PHASE 3 — 3D Viewer
+  ═════════════════════════════ -->
+  <div class="scan-phase scan-viewer-phase" id="viewerPhase" style="display:none">
+    <!-- Three.js canvas is injected here by JS -->
+    <div id="viewer3d"></div>
+
+    <div class="viewer-toolbar">
+      <button id="downloadBtn" class="btn btn-primary">
+        <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 3v12"/>
+        </svg>
+        Download .glb
+      </button>
+      <button id="rescanBtn" class="btn btn-ghost">Scan Again</button>
+      <a href="index.html" class="btn btn-ghost">Home</a>
+      <span class="viewer-stats" id="meshStats"></span>
+    </div>
+  </div>
+
+  <!-- ────────────────────────────────────────────────────────────
+       CDN libraries
+       Three.js r160 — last release with UMD examples/js/ builds.
+       scan.js is type="module" so it can use dynamic import()
+       for Transformers.js while still reading window.THREE globals.
+  ──────────────────────────────────────────────────────────────── -->
+  <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/examples/js/controls/OrbitControls.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/examples/js/exporters/GLTFExporter.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/examples/js/utils/BufferGeometryUtils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/selfie_segmentation.js" crossorigin="anonymous"></script>
+
+  <script type="module" src="scan.js"></script>
+</body>
+</html>
