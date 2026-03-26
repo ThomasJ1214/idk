@@ -189,10 +189,9 @@ async function loadDepthModel() {
       'https://cdn.jsdelivr.net/npm/@xenova/transformers@2/dist/transformers.min.js'
     );
 
-    // Point the WASM backend at the same CDN path as the JS so relative
-    // .wasm file loads succeed (avoids "failed to fetch" on the .wasm files)
-    env.backends.onnx.wasm.wasmPaths =
-      'https://cdn.jsdelivr.net/npm/@xenova/transformers@2/dist/';
+    // Force single-threaded WASM — avoids the SharedArrayBuffer requirement
+    // that iOS Chrome and servers without COOP/COEP headers block.
+    env.backends.onnx.wasm.numThreads = 1;
 
     depthPipeline = await pipeline(
       'depth-estimation',
@@ -218,12 +217,12 @@ async function loadDepthModel() {
     warmup.width = 64; warmup.height = 64;
     // Draw something so the canvas isn't blank (avoids potential edge cases)
     warmup.getContext('2d').fillRect(0, 0, 64, 64);
-    await depthPipeline(warmup);
+    await depthPipeline(warmup.toDataURL());
 
     modelStatus.textContent = '✓ Model ready — click Start Scan when you\'re set!';
     startScanBtn.disabled = false;
   } catch (err) {
-    modelStatus.textContent = '⚠ Could not load depth model. Check your internet connection and refresh.';
+    modelStatus.textContent = `⚠ Depth model failed: ${err?.message?.slice(0, 120) ?? err}. Try refreshing.`;
     console.error('[scan] Depth model load error:', err);
   }
 }
@@ -371,7 +370,7 @@ async function captureAngle(idx) {
   let depthVals;
   let depthW = CAPTURE_W, depthH = CAPTURE_H;
   try {
-    const result = await depthPipeline(grabCanvas);
+    const result = await depthPipeline(grabCanvas.toDataURL('image/jpeg', 0.85));
     const depthImg = result.depth;             // RawImage (Uint8ClampedArray, 1-ch grayscale)
     depthW = depthImg.width;
     depthH = depthImg.height;
