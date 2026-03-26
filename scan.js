@@ -269,11 +269,17 @@ function runSegmentation(canvas) {
         tmpX.drawImage(segmentationMask, 0, 0, CAPTURE_W, CAPTURE_H);
         const imgData = tmpX.getImageData(0, 0, CAPTURE_W, CAPTURE_H);
         const mask = new Uint8Array(CAPTURE_W * CAPTURE_H);
+        let nonZero = 0;
         for (let i = 0; i < mask.length; i++) {
-          // Red channel: 255 = person, 0 = background
-          mask[i] = imgData.data[i * 4] > 127 ? 255 : 0;
+          // MediaPipe may write the person mask to the red OR alpha channel
+          // depending on the rendering backend — check both.
+          const r = imgData.data[i * 4];
+          const a = imgData.data[i * 4 + 3];
+          if (Math.max(r, a) > 127) { mask[i] = 255; nonZero++; }
         }
-        resolve(mask);
+        // If mask is empty (wrong channel or segmentation produced nothing),
+        // return null so the caller falls back to the depth-based mask.
+        resolve(nonZero > 0 ? mask : null);
       } catch (e) {
         resolve(null);
       }
